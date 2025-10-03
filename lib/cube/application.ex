@@ -8,8 +8,7 @@ defmodule Cube.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      # Starts a worker by calling: Cube.Worker.start_link(arg)
-      # {Cube.Worker, arg}
+      {Bandit, plug: Cube.Router, scheme: :http, port: 4000}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
