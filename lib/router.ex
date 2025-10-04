@@ -14,7 +14,7 @@ defmodule Cube.Router do
       {:ok, parsed} ->
         parsed
         |> Parser.Data.encoding()
-        |> Storage.set()
+        |> Storage.exec()
         send_resp(conn, 200, "OK: #{inspect(parsed)}")
       {:error, reason} ->
         send_resp(conn, 400, "ERR: #{reason}")
