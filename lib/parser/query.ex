@@ -1,3 +1,3 @@
 defmodule Parser.Query do
-  defstruct [:command]
+  defstruct [:command, :shard, :type]
 end
