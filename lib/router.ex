@@ -9,7 +9,16 @@ defmodule Cube.Router do
   end
 
   post "/" do
-    send_resp(conn, 200, "Data stored")
+    {:ok, body, conn} = Plug.Conn.read_body(conn)
+    case Parser.Parser.parse(body) do
+      {:ok, parsed} ->
+        parsed
+        |> Parser.Data.encoding()
+        |> Storage.set()
+        send_resp(conn, 200, "OK: #{inspect(parsed)}")
+      {:error, reason} ->
+        send_resp(conn, 400, "ERR: #{reason}")
+    end
   end
 
   match _ do
