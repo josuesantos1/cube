@@ -1,5 +1,5 @@
 defmodule Parser.Data do
-  def encoding(data, key, type) do
+  def encoding(%{command: :set, key: key, value: %Parser.Value{type: type, value: value}}) do
     if byte_size(key) > 512 do
       raise ArgumentError, "Key length exceeds maximum of 512 bytes"
     end
@@ -11,13 +11,11 @@ defmodule Parser.Data do
       |> Integer.to_string(16)
       |> String.pad_leading(3, "0")
 
-    %Parser.Lttlv{
-      tag_lenght: key_length,
-      tag: key_hexadecimal,
-      type: type,
-      length: byte_size(data),
-      value: data
-    }
+    length_value = value |> to_string() |> byte_size() |> Integer.to_string(16) |> String.pad_leading(8, "0")
+
+    IO.puts("Encoding data: key_length=#{key_length}, key_hex=#{key_hexadecimal}, type=#{type}, length_value=#{length_value}, value=#{value}")
+
+    key_length <> key_hexadecimal <> to_string(type) <> length_value <> to_string(value) <> "\n"
   end
 
   def decoding_string(data_string) do
