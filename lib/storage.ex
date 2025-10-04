@@ -1,5 +1,11 @@
 defmodule Storage do
-  def set(data) do
+  def exec(%Parser.Query{command: command}) do
+    IO.puts("Executing query: #{command}")
+  end
+
+ # mudar para receber query
+ # mudar parser query para adicionar um field shard
+  def exec(data) do
     IO.puts("Storing data: #{inspect(data)}")
 
     id = :erlang.phash2(data, 20)
