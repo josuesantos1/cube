@@ -15,8 +15,17 @@ defmodule Parser.Data do
 
     IO.puts("Encoding data: key_length=#{key_length}, key_hex=#{key_hexadecimal}, type=#{type}, length_value=#{length_value}, value=#{value}")
 
+    type = case type do
+      :string -> "0"
+      :integer -> "1"
+      :float -> "2"
+      :boolean -> "3"
+      :nil -> "4"
+      _ -> raise ArgumentError, "Unsupported type: #{type}"
+    end
+
     %Parser.Query{
-      command: key_length <> key_hexadecimal <> to_string(type) <> length_value <> to_string(value) <> "\n",
+      command: key_length <> key_hexadecimal <> type <> length_value <> to_string(value) <> "\n",
       type: :set,
       shard: get_shard(key_hexadecimal)
     }
@@ -42,16 +51,14 @@ defmodule Parser.Data do
     tag = String.slice(data_string, 3, tag_length)
     type = String.slice(data_string, 3 + tag_length, 1)
 
-    length = String.slice(data_string, 4 + tag_length, 4)
+    length = String.slice(data_string, 4 + tag_length, 11)
      |> String.to_integer(16)
 
-    value = String.slice(data_string, 8 + tag_length, length)
+    value = String.slice(data_string, 12 + tag_length, length)
 
-    %Parser.Value{
-      key: Base.decode16(tag, case: :upper) |> elem(1),
-      value: value,
-      type: type
-    }
+    IO.puts("Decoding data: tag_length=#{tag_length}, tag=#{tag}, type=#{type}, length=#{length}, value=#{value}")
+
+    value
   end
 
   defp get_shard(id) do
