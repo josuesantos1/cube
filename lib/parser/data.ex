@@ -18,6 +18,21 @@ defmodule Parser.Data do
     key_length <> key_hexadecimal <> to_string(type) <> length_value <> to_string(value) <> "\n"
   end
 
+  def encoding(%{command: :get, key: key}) do
+    if byte_size(key) > 512 do
+      raise ArgumentError, "Key length exceeds maximum of 512 bytes"
+    end
+
+    key_hexadecimal = Base.encode16(key, case: :upper)
+
+    key_length = key_hexadecimal
+      |> byte_size()
+      |> Integer.to_string(16)
+      |> String.pad_leading(3, "0")
+
+    %Parser.Query{command: key_length <> key_hexadecimal}
+  end
+
   def decoding_string(data_string) do
     tag_length = String.slice(data_string, 0, 3) |> String.to_integer(16)
     tag = String.slice(data_string, 3, tag_length)
