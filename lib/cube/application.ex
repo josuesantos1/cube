@@ -7,8 +7,10 @@ defmodule Cube.Application do
 
   @impl true
   def start(_type, _args) do
+    port = String.to_integer(System.get_env("PORT") || "4000")
+
     children = [
-      {Bandit, plug: Cube.Router, scheme: :http, port: 4000}
+      {Bandit, plug: Cube.Router, scheme: :http, port: port}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
