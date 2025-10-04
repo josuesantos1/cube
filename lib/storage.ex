@@ -2,7 +2,13 @@ defmodule Storage do
   def set(data) do
     IO.puts("Storing data: #{inspect(data)}")
 
-    File.write("data.txt", "#{inspect(data)}\n", [:append])
+    id = :erlang.phash2(data, 20)
+    filename = get_shard(id)
+    |> Integer.to_string()
+    |> String.pad_leading(2, "0")
+    |> Kernel.<>("_data.txt")
+
+    File.write(filename, data, [:append])
     :ok
   end
 
@@ -11,7 +17,7 @@ defmodule Storage do
     {:ok, %{id: id, data: "Sample Data"}}
   end
 
-  defp shard(id) do
+  defp get_shard(id) do
     rem(id, 20)
   end
 end
