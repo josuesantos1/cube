@@ -12,6 +12,14 @@ defmodule Parser.Parser do
     end
   end
 
+  defp parse_command("GET " <> rest) do
+    case parse_key(rest) do
+      {:ok, key, ""} -> {:ok, %{command: :get, key: key}}
+      {:ok, _key, _rest} -> {:error, "extra data after key in GET command"}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   defp parse_command(_) do
     {:error, "unknown command"}
   end
@@ -34,8 +42,8 @@ defmodule Parser.Parser do
   end
 
   defp parse_key(input) do
-    case Regex.run(~r/^([A-Za-z_][A-Za-z0-9_]*)\s+(.*)$/, input) do
-      [_, key, rest] -> {:ok, key, rest}
+    case Regex.run(~r/^([A-Za-z_][A-Za-z0-9_]*)(.*)$/, input) do
+      [_, key, rest] -> {:ok, key, String.trim_leading(rest)}
       nil -> {:error, "invalid key - must be simple string (e.g. ABC, my_key)"}
     end
   end
