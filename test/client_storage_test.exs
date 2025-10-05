@@ -60,16 +60,16 @@ defmodule Cube.ClientStorageTest do
   end
 
   describe "SET command" do
-    test "sets new key and returns ok" do
+    test "sets new key and returns NIL and new value" do
       {:ok, pid} = Cube.ClientStorage.start_link("test_client_set_new")
 
       value = %Parser.Value{type: :string, value: "Bob"}
       result = Cube.ClientStorage.set(pid, "user", value)
 
-      assert {:ok, nil} = result
+      assert {:ok, "NIL", "Bob"} = result
     end
 
-    test "overwrites existing key and returns old value" do
+    test "overwrites existing key and returns old and new values" do
       {:ok, pid} = Cube.ClientStorage.start_link("test_client_set_overwrite")
 
       value1 = %Parser.Value{type: :string, value: "Original"}
@@ -78,7 +78,7 @@ defmodule Cube.ClientStorageTest do
       value2 = %Parser.Value{type: :string, value: "Updated"}
       result = Cube.ClientStorage.set(pid, "data", value2)
 
-      assert {:already_exists, "Original"} = result
+      assert {:ok, "Original", "Updated"} = result
     end
 
     test "persists data to file" do
@@ -205,7 +205,7 @@ defmodule Cube.ClientStorageTest do
       value = %Parser.Value{type: :string, value: "测试"}
       result = Cube.ClientStorage.set(pid, "键", value)
 
-      assert {:ok, nil} = result
+      assert {:ok, "NIL", "测试"} = result
 
       {:ok, retrieved} = Cube.ClientStorage.get(pid, "键")
       assert retrieved == "测试"
@@ -218,7 +218,7 @@ defmodule Cube.ClientStorageTest do
       value = %Parser.Value{type: :string, value: "value"}
 
       result = Cube.ClientStorage.set(pid, long_key, value)
-      assert {:ok, nil} = result
+      assert {:ok, "NIL", "value"} = result
     end
 
     test "handles large values" do

@@ -61,17 +61,17 @@ defmodule Cube.IntegrationTest do
   end
 
   describe "SET command via HTTP" do
-    test "returns TRUE for new key" do
+    test "returns NIL and new value for new key" do
       conn =
         conn(:post, "/", "SET newkey \"newvalue\"")
         |> put_req_header("x-client-name", "SetTestClient")
         |> Cube.Router.call(@opts)
 
       assert conn.status == 200
-      assert conn.resp_body == "TRUE"
+      assert conn.resp_body == "NIL newvalue"
     end
 
-    test "returns FALSE with old value for existing key" do
+    test "returns old and new values for existing key" do
       client_name = "SetExistingClient"
 
       conn(:post, "/", "SET dupkey \"value1\"")
@@ -84,7 +84,7 @@ defmodule Cube.IntegrationTest do
         |> Cube.Router.call(@opts)
 
       assert conn.status == 200
-      assert conn.resp_body == "FALSE value1"
+      assert conn.resp_body == "value1 value2"
     end
 
     test "sets integer value" do
