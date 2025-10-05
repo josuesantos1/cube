@@ -109,4 +109,45 @@ defmodule ParserTest do
                Parser.Parser.parse("GET")
     end
   end
+
+  describe "Transaction commands" do
+    test "parses BEGIN command" do
+      assert {:ok, %{command: :begin}} = Parser.Parser.parse("BEGIN")
+    end
+
+    test "parses BEGIN with extra whitespace" do
+      assert {:ok, %{command: :begin}} = Parser.Parser.parse("  BEGIN  ")
+    end
+
+    test "rejects BEGIN with arguments" do
+      assert {:error, "BEGIN command does not accept arguments"} =
+               Parser.Parser.parse("BEGIN extra")
+    end
+
+    test "parses COMMIT command" do
+      assert {:ok, %{command: :commit}} = Parser.Parser.parse("COMMIT")
+    end
+
+    test "parses COMMIT with extra whitespace" do
+      assert {:ok, %{command: :commit}} = Parser.Parser.parse("  COMMIT  ")
+    end
+
+    test "rejects COMMIT with arguments" do
+      assert {:error, "COMMIT command does not accept arguments"} =
+               Parser.Parser.parse("COMMIT extra")
+    end
+
+    test "parses ROLLBACK command" do
+      assert {:ok, %{command: :rollback}} = Parser.Parser.parse("ROLLBACK")
+    end
+
+    test "parses ROLLBACK with extra whitespace" do
+      assert {:ok, %{command: :rollback}} = Parser.Parser.parse("  ROLLBACK  ")
+    end
+
+    test "rejects ROLLBACK with arguments" do
+      assert {:error, "ROLLBACK command does not accept arguments"} =
+               Parser.Parser.parse("ROLLBACK extra")
+    end
+  end
 end
