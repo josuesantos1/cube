@@ -64,7 +64,7 @@ defmodule Storage.Engine do
         "NIL"
       end
 
-    Persistence.write(shard_identifier, command)
+    Persistence.update_or_append(shard_identifier, command, key_prefix)
     updated_filter = Filter.add(filter, key_prefix)
 
     {:ok, old_value, new_value_str, updated_filter}
