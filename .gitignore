@@ -21,4 +21,7 @@ cube-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
 *_data.txt
+.elixir_ls/
+.elixir-tools/
