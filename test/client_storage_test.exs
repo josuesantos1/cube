@@ -126,12 +126,12 @@ defmodule Cube.ClientStorageTest do
     end
 
     test "clients write to separate shard files" do
-      {:ok, _pid_alice} = Cube.ClientStorage.start_link("alice_files")
-      {:ok, _pid_bob} = Cube.ClientStorage.start_link("bob_files")
+      {:ok, pid_alice} = Cube.ClientStorage.start_link("alice_files")
+      {:ok, pid_bob} = Cube.ClientStorage.start_link("bob_files")
 
       value = %Parser.Value{type: :string, value: "test"}
-      Cube.ClientStorage.set(_pid_alice, "key1", value)
-      Cube.ClientStorage.set(_pid_bob, "key2", value)
+      Cube.ClientStorage.set(pid_alice, "key1", value)
+      Cube.ClientStorage.set(pid_bob, "key2", value)
 
       files = File.ls!()
       alice_files = Enum.filter(files, &String.contains?(&1, "alice_files"))
@@ -146,16 +146,16 @@ defmodule Cube.ClientStorageTest do
 
   describe "persistence and recovery" do
     test "data persists after process restart" do
-      client_name = "persistent_client"
-      {:ok, pid} = Cube.ClientStorage.start_link(client_name)
+      client_name = "persistent_client_#{:rand.uniform(100000)}"
+      {:ok, pid} = Cube.ClientSupervisor.get_or_start_client(client_name)
 
       value = %Parser.Value{type: :string, value: "Persisted Data"}
       Cube.ClientStorage.set(pid, "persistent_key", value)
 
-      Process.exit(pid, :kill)
+      DynamicSupervisor.terminate_child(Cube.ClientSupervisor, pid)
       :timer.sleep(100)
 
-      {:ok, new_pid} = Cube.ClientStorage.start_link(client_name)
+      {:ok, new_pid} = Cube.ClientSupervisor.get_or_start_client(client_name)
 
       result = Cube.ClientStorage.get(new_pid, "persistent_key")
       assert {:ok, "Persisted Data"} = result
@@ -191,8 +191,7 @@ defmodule Cube.ClientStorageTest do
       results = Task.await_many(tasks)
 
       assert Enum.all?(results, fn
-               {:ok, _} -> true
-               {:already_exists, _} -> true
+               {:ok, _, _} -> true
                _ -> false
              end)
     end

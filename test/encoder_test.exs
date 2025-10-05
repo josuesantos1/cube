@@ -18,7 +18,7 @@ defmodule EncoderTest do
       value = %Parser.Value{type: :integer, value: 42}
       {command, _shard} = Encoder.encode_set("age", value)
 
-      assert String.contains?(command, "42")
+      assert String.contains?(command, Base.encode16("42"))
       assert String.contains?(command, "1")
     end
 
@@ -26,7 +26,7 @@ defmodule EncoderTest do
       value = %Parser.Value{type: :boolean, value: true}
       {command, _shard} = Encoder.encode_set("active", value)
 
-      assert String.contains?(command, "true")
+      assert String.contains?(command, Base.encode16("true"))
       assert String.contains?(command, "3")
     end
 

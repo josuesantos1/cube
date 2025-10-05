@@ -5,7 +5,7 @@ defmodule FilterTest do
     test "creates a new empty bloom filter" do
       filter = Filter.new()
 
-      assert is_tuple(filter)
+      assert %Filter{} = filter
     end
   end
 
@@ -14,8 +14,8 @@ defmodule FilterTest do
       filter = Filter.new()
       updated_filter = Filter.add(filter, "test_key")
 
-      assert is_tuple(updated_filter)
-      assert filter != updated_filter
+      assert %Filter{} = updated_filter
+      assert Filter.contains?(updated_filter, "test_key")
     end
 
     test "can add multiple elements" do
@@ -27,7 +27,7 @@ defmodule FilterTest do
         |> Filter.add("key2")
         |> Filter.add("key3")
 
-      assert is_tuple(filter)
+      assert %Filter{} = filter
     end
 
     test "adding same element multiple times is idempotent" do
@@ -37,7 +37,7 @@ defmodule FilterTest do
       filter2 = Filter.add(filter1, "duplicate")
       filter3 = Filter.add(filter2, "duplicate")
 
-      assert is_tuple(filter3)
+      assert %Filter{} = filter3
     end
   end
 

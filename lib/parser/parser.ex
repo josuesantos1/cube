@@ -13,10 +13,16 @@ defmodule Parser.Parser do
   end
 
   defp parse_command("GET " <> rest) do
-    case parse_key(rest) do
-      {:ok, key, ""} -> {:ok, %{command: :get, key: key}}
-      {:ok, _key, _rest} -> {:error, "extra data after key in GET command"}
-      {:error, reason} -> {:error, reason}
+    case parse_key(String.trim(rest)) do
+      {:ok, key, remaining} ->
+        if String.trim(remaining) == "" do
+          {:ok, %{command: :get, key: key}}
+        else
+          {:error, "extra data after key in GET command"}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -53,9 +59,6 @@ defmodule Parser.Parser do
         rest = String.trim_leading(rest)
 
         case parse_value(rest) do
-          {:ok, %Parser.Value{type: :nil}, _remaining} ->
-            {:error, "Cannot SET key to NIL"}
-
           {:ok, value, _remaining} ->
             {:ok, key, value}
 

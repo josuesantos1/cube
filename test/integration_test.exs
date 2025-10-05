@@ -246,18 +246,21 @@ defmodule Cube.IntegrationTest do
     end
 
     test "handles newlines in values" do
-      client_name = "NewlineClient"
+      client_name = "Bob_newline_#{:rand.uniform(100000)}"
 
-      conn(:post, "/", "SET text \"Line1\\nLine2\"")
-      |> put_req_header("x-client-name", client_name)
-      |> Cube.Router.call(@opts)
+      set_conn =
+        conn(:post, "/", "SET text \"Line1\\nLine2\"")
+        |> put_req_header("x-client-name", client_name)
+        |> Cube.Router.call(@opts)
 
-      conn =
+      assert set_conn.status == 200, "SET failed: #{set_conn.resp_body}"
+
+      get_conn =
         conn(:post, "/", "GET text")
         |> put_req_header("x-client-name", client_name)
         |> Cube.Router.call(@opts)
 
-      assert conn.resp_body == "Line1\nLine2"
+      assert get_conn.resp_body == "Line1\nLine2"
     end
   end
 
