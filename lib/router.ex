@@ -26,8 +26,7 @@ defmodule Cube.Router do
 
         {:ok, %{command: :set, key: key, value: value}} ->
           case Cube.ClientStorage.set(client_pid, key, value) do
-            {:ok, _} -> send_resp(conn, 200, "TRUE")
-            {:already_exists, old_value} -> send_resp(conn, 200, "FALSE #{old_value}")
+            {:ok, old_value, new_value} -> send_resp(conn, 200, "#{old_value} #{new_value}")
             {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
           end
 
