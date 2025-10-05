@@ -30,6 +30,15 @@ defmodule Cube.ClientStorage do
     GenServer.call(client_pid, {:set, key, value})
   end
 
+  defp encode_value(%Parser.Value{type: type, value: value}) do
+    case type do
+      :string -> value
+      :integer -> Integer.to_string(value)
+      :boolean -> Atom.to_string(value)
+      :nil -> "NIL"
+    end
+  end
+
   @impl true
   def handle_call({:get, key}, _from, state) do
     {command, shard} = Encoder.encode_get(key)
@@ -52,30 +61,24 @@ defmodule Cube.ClientStorage do
   def handle_call({:set, key, value}, _from, state) do
     {command, shard} = Encoder.encode_set(key, value)
     key_prefix = Encoder.extract_key_prefix(command)
+    new_value_str = encode_value(value)
 
-    result =
+    old_value =
       if bloom_contains?(state, shard, key_prefix) do
-        old_value =
-          case Persistence.read_line_by_prefix(shard_file(state.client_name, shard), command) do
-            nil -> "NIL"
-            line -> Encoder.decode(line)
-          end
-
-        {:already_exists, old_value}
+        case Persistence.read_line_by_prefix(shard_file(state.client_name, shard), command) do
+          nil -> "NIL"
+          line -> Encoder.decode(line)
+        end
       else
-        updated_filter = Filter.add(Map.get(state.filters, shard), key_prefix)
-        updated_filters = Map.put(state.filters, shard, updated_filter)
-        Persistence.write(shard_file(state.client_name, shard), command)
-        {:ok, nil}
+        "NIL"
       end
 
-    new_state =
-      if match?({:ok, _}, result) do
-        updated_filter = Filter.add(Map.get(state.filters, shard), key_prefix)
-        %{state | filters: Map.put(state.filters, shard, updated_filter)}
-      else
-        state
-      end
+    Persistence.write(shard_file(state.client_name, shard), command)
+
+    updated_filter = Filter.add(Map.get(state.filters, shard), key_prefix)
+    new_state = %{state | filters: Map.put(state.filters, shard, updated_filter)}
+
+    result = {:ok, old_value, new_value_str}
 
     {:reply, result, new_state}
   end
