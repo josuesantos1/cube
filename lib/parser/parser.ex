@@ -20,6 +20,27 @@ defmodule Parser.Parser do
     end
   end
 
+  defp parse_command("BEGIN" <> rest) do
+    case String.trim(rest) do
+      "" -> {:ok, %{command: :begin}}
+      _ -> {:error, "BEGIN command does not accept arguments"}
+    end
+  end
+
+  defp parse_command("COMMIT" <> rest) do
+    case String.trim(rest) do
+      "" -> {:ok, %{command: :commit}}
+      _ -> {:error, "COMMIT command does not accept arguments"}
+    end
+  end
+
+  defp parse_command("ROLLBACK" <> rest) do
+    case String.trim(rest) do
+      "" -> {:ok, %{command: :rollback}}
+      _ -> {:error, "ROLLBACK command does not accept arguments"}
+    end
+  end
+
   defp parse_command(_) do
     {:error, "unknown command"}
   end
