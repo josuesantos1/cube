@@ -11,15 +11,7 @@ defmodule Cube.ClientStorage do
 
   @impl true
   def init(client_name) do
-    filters =
-      0..19
-      |> Enum.map(fn shard ->
-        shard_str = String.pad_leading(Integer.to_string(shard), 2, "0")
-        {shard_str, load_filter_from_file(client_name, shard_str)}
-      end)
-      |> Map.new()
-
-    {:ok, %{client_name: client_name, filters: filters}}
+    {:ok, %{client_name: client_name, transaction: nil}}
   end
 
   def get(client_pid, key) do
@@ -30,77 +22,142 @@ defmodule Cube.ClientStorage do
     GenServer.call(client_pid, {:set, key, value})
   end
 
-  defp encode_value(%Parser.Value{type: type, value: value}) do
-    case type do
-      :string -> value
-      :integer -> Integer.to_string(value)
-      :boolean -> Atom.to_string(value)
-      :nil -> "NIL"
+  def begin_transaction(client_pid) do
+    GenServer.call(client_pid, :begin)
+  end
+
+  def commit(client_pid) do
+    GenServer.call(client_pid, :commit)
+  end
+
+  def rollback(client_pid) do
+    GenServer.call(client_pid, :rollback)
+  end
+
+  @impl true
+  def handle_call(:begin, _from, state) do
+    case state.transaction do
+      nil ->
+        transaction = %{
+          reads: %{},
+          writes: %{}
+        }
+        {:reply, :ok, %{state | transaction: transaction}}
+
+      _active ->
+        {:reply, {:error, "Already in transaction"}, state}
     end
   end
 
   @impl true
   def handle_call({:get, key}, _from, state) do
-    {command, shard} = Encoder.encode_get(key)
-    key_prefix = Encoder.extract_key_prefix(command)
+    case state.transaction do
+      nil ->
+        result = Cube.GlobalStorage.get(key)
+        {:reply, result, state}
 
-    result =
-      if bloom_contains?(state, shard, key_prefix) do
-        case Persistence.read_line_by_prefix(shard_file(state.client_name, shard), command) do
-          nil -> {:ok, "NIL"}
-          line -> {:ok, Encoder.decode(line)}
+      transaction ->
+        case Map.get(transaction.writes, key) do
+          nil ->
+            case Map.get(transaction.reads, key) do
+              nil ->
+                {:ok, value} = Cube.GlobalStorage.get(key)
+                updated_transaction = %{transaction | reads: Map.put(transaction.reads, key, value)}
+                {:reply, {:ok, value}, %{state | transaction: updated_transaction}}
+
+              cached_value ->
+                {:reply, {:ok, cached_value}, state}
+            end
+
+          written_value ->
+            {:reply, {:ok, written_value}, state}
         end
-      else
-        {:ok, "NIL"}
-      end
+    end
+  end
 
-    {:reply, result, state}
+  @impl true
+  def handle_call(:commit, _from, state) do
+    case state.transaction do
+      nil ->
+        {:reply, {:error, "No transaction in progress"}, state}
+
+      transaction ->
+        conflicts =
+          Enum.filter(transaction.reads, fn {key, expected_value} ->
+            {:ok, current_value} = Cube.GlobalStorage.get(key)
+            current_value != expected_value
+          end)
+
+        case conflicts do
+          [] ->
+            Enum.each(transaction.writes, fn {key, value_str} ->
+              parsed_value =
+                cond do
+                  value_str == "NIL" -> %Parser.Value{type: :nil, value: nil}
+                  value_str == "true" -> %Parser.Value{type: :boolean, value: true}
+                  value_str == "false" -> %Parser.Value{type: :boolean, value: false}
+                  String.match?(value_str, ~r/^\d+$/) -> %Parser.Value{type: :integer, value: String.to_integer(value_str)}
+                  true -> %Parser.Value{type: :string, value: value_str}
+                end
+
+              Cube.GlobalStorage.set(key, parsed_value)
+            end)
+
+            {:reply, :ok, %{state | transaction: nil}}
+
+          conflicting_keys ->
+            conflicting_key_names = Enum.map(conflicting_keys, fn {key, _} -> key end)
+            error_msg = "Atomicity failure (#{Enum.join(conflicting_key_names, ", ")})"
+            {:reply, {:error, error_msg}, %{state | transaction: nil}}
+        end
+    end
+  end
+
+  @impl true
+  def handle_call(:rollback, _from, state) do
+    case state.transaction do
+      nil ->
+        {:reply, {:error, "No transaction in progress"}, state}
+
+      _transaction ->
+        {:reply, :ok, %{state | transaction: nil}}
+    end
   end
 
   @impl true
   def handle_call({:set, key, value}, _from, state) do
-    {command, shard} = Encoder.encode_set(key, value)
-    key_prefix = Encoder.extract_key_prefix(command)
-    new_value_str = encode_value(value)
+    new_value_str = Storage.Engine.encode_value(value)
 
-    old_value =
-      if bloom_contains?(state, shard, key_prefix) do
-        case Persistence.read_line_by_prefix(shard_file(state.client_name, shard), command) do
-          nil -> "NIL"
-          line -> Encoder.decode(line)
-        end
-      else
-        "NIL"
-      end
+    case state.transaction do
+      nil ->
+        {:ok, old_value, ^new_value_str} = Cube.GlobalStorage.set(key, value)
+        {:reply, {:ok, old_value, new_value_str}, state}
 
-    Persistence.write(shard_file(state.client_name, shard), command)
+      transaction ->
+        {old_value, updated_reads} =
+          case Map.get(transaction.writes, key) do
+            nil ->
+              case Map.get(transaction.reads, key) do
+                nil ->
+                  {:ok, storage_value} = Cube.GlobalStorage.get(key)
+                  {storage_value, Map.put(transaction.reads, key, storage_value)}
 
-    updated_filter = Filter.add(Map.get(state.filters, shard), key_prefix)
-    new_state = %{state | filters: Map.put(state.filters, shard, updated_filter)}
+                read_value ->
+                  {read_value, transaction.reads}
+              end
 
-    result = {:ok, old_value, new_value_str}
+            previous_write ->
+              {previous_write, transaction.reads}
+          end
 
-    {:reply, result, new_state}
+        updated_transaction = %{
+          transaction
+          | writes: Map.put(transaction.writes, key, new_value_str),
+            reads: updated_reads
+        }
+
+        {:reply, {:ok, old_value, new_value_str}, %{state | transaction: updated_transaction}}
+    end
   end
 
-  defp bloom_contains?(state, shard, key) do
-    filter = Map.get(state.filters, shard)
-    Filter.contains?(filter, key)
-  end
-
-  defp load_filter_from_file(client_name, shard) do
-    filter = Filter.new()
-    shard_file = shard_file(client_name, shard)
-
-    shard_file
-    |> Persistence.stream_lines()
-    |> Enum.reduce(filter, fn line, acc ->
-      key_encoded = Encoder.extract_key_prefix(String.trim(line))
-      Filter.add(acc, key_encoded)
-    end)
-  end
-
-  defp shard_file(client_name, shard) do
-    "S#{shard}_#{client_name}"
-  end
 end
