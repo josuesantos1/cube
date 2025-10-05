@@ -1,7 +1,10 @@
 defmodule Persistence do
   def write(shard, command) do
     file_path = build_path(shard)
-    File.write(file_path, command, [:append])
+    case File.write(file_path, command, [:append]) do
+      :ok -> :ok
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   def read_line_by_prefix(shard, prefix) do
