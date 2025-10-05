@@ -32,8 +32,14 @@ defmodule Parser.Parser do
         rest = String.trim_leading(rest)
 
         case parse_value(rest) do
-          {:ok, value, _remaining} -> {:ok, key, value}
-          {:error, reason} -> {:error, reason}
+          {:ok, %Parser.Value{type: :nil}, _remaining} ->
+            {:error, "Cannot SET key to NIL"}
+
+          {:ok, value, _remaining} ->
+            {:ok, key, value}
+
+          {:error, reason} ->
+            {:error, reason}
         end
 
       {:error, reason} ->
