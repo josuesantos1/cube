@@ -12,10 +12,11 @@ defmodule Cube.Router do
     {:ok, body, conn} = Plug.Conn.read_body(conn)
     case Parser.Parser.parse(body) do
       {:ok, parsed} ->
-        result = parsed
+        {_, result} = parsed
         |> Parser.Data.encoding()
         |> Storage.exec()
 
+        IO.inspect(result, label: "Result")
         send_resp(conn, 200, "OK: #{result}")
       {:error, reason} ->
         send_resp(conn, 400, "ERR: #{reason}")

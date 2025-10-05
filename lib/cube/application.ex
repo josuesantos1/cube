@@ -10,6 +10,7 @@ defmodule Cube.Application do
     port = String.to_integer(System.get_env("PORT") || "4000")
 
     children = [
+      Storage,
       {Bandit, plug: Cube.Router, scheme: :http, port: port}
     ]
 
