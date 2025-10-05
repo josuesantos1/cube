@@ -12,7 +12,11 @@ defmodule Encoder do
       |> Integer.to_string(16)
       |> String.pad_leading(3, "0")
 
-    length_value = value |> to_string() |> byte_size() |> Integer.to_string(16) |> String.pad_leading(8, "0")
+      value = value
+    |> to_string()
+    |> Base.encode16()
+
+    length_value = value |> byte_size() |> Integer.to_string(16) |> String.pad_leading(8, "0")
 
     type_encoded =
       case type do
@@ -25,7 +29,7 @@ defmodule Encoder do
       end
 
     shard = get_shard(key_hexadecimal)
-    command = key_length <> key_hexadecimal <> type_encoded <> length_value <> to_string(value) <> "\n"
+    command = key_length <> key_hexadecimal <> type_encoded <> length_value <> value <> "\n"
 
     {command, shard}
   end
@@ -58,9 +62,12 @@ defmodule Encoder do
       String.slice(data_string, 4 + tag_length, 8)
       |> String.to_integer(16)
 
-    value = String.slice(data_string, 12 + tag_length, length)
+    value_hex = String.slice(data_string, 12 + tag_length, length)
 
-    value
+    case Base.decode16(value_hex, case: :mixed) do
+      {:ok, decoded} -> decoded
+      :error -> value_hex
+    end
   end
 
   def extract_key_prefix(command) do
