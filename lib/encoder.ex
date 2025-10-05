@@ -51,8 +51,8 @@ defmodule Encoder do
 
   def decode(data_string) do
     tag_length = String.slice(data_string, 0, 3) |> String.to_integer(16)
-    tag = String.slice(data_string, 3, tag_length)
-    type = String.slice(data_string, 3 + tag_length, 1)
+    _tag = String.slice(data_string, 3, tag_length)
+    _type = String.slice(data_string, 3 + tag_length, 1)
 
     length =
       String.slice(data_string, 4 + tag_length, 8)
