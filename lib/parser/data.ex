@@ -46,7 +46,7 @@ defmodule Parser.Data do
     %Parser.Query{command: key_length <> key_hexadecimal, type: :get, shard: get_shard(key_hexadecimal)}
   end
 
-  def decoding_string(data_string) do
+  def decoding(data_string) do
     tag_length = String.slice(data_string, 0, 3) |> String.to_integer(16)
     tag = String.slice(data_string, 3, tag_length)
     type = String.slice(data_string, 3 + tag_length, 1)
