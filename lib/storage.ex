@@ -1,4 +1,5 @@
 defmodule Storage do
+  @behaviour Storage.Behaviour
   use GenServer
 
   def start_link(_) do
@@ -17,57 +18,38 @@ defmodule Storage do
     {:ok, %{filters: filters}}
   end
 
-  def exec(%Parser.Query{type: :get, command: command, shard: shard}) do
-    IO.puts("Executing GET query: #{command}")
-    {:ok, get(command, shard)}
-  end
+  @impl Storage.Behaviour
+  def get(key) do
+    {command, shard} = Encoder.encode_get(key)
+    key_prefix = Encoder.extract_key_prefix(command)
 
-  def exec(%Parser.Query{type: :set, command: command, shard: shard}) do
-    IO.puts("Executing SET command: #{command}")
-
-    key_encoded = extract_key_from_command(command)
-
-    if bloom_contains?(shard, key_encoded) do
-      old_value = get_from_file(command, shard)
-      # TODO: Update the value in the file (not implemented)
-      {:already_exists, old_value}
-    else
-      GenServer.call(__MODULE__, {:add_to_filter, shard, key_encoded})
-      File.write(shard <> "_data.txt", command, [:append])
-      {:ok, command}
-    end
-  end
-
-  defp get(command, shard) do
-    IO.puts("Retrieving data for command: #{command} in shard: #{shard}")
-
-    key_encoded = extract_key_from_command(command)
-
-    if bloom_contains?(shard, key_encoded) do
-      get_from_file(command, shard)
-    else
-      "NIL"
-    end
-  end
-
-  defp get_from_file(command, shard) do
-    file_path = shard <> "_data.txt"
-
-    if File.exists?(file_path) do
-      file_path
-      |> File.stream!()
-      |> Enum.find(fn line ->
-        String.starts_with?(line, command)
-      end)
-      |> case do
-        nil -> "NIL"
-        line ->
-          line
-          |> String.trim()
-          |> Parser.Data.decoding()
+    if bloom_contains?(shard, key_prefix) do
+      case Persistence.read_line_by_prefix(shard, command) do
+        nil -> {:ok, "NIL"}
+        line -> {:ok, Encoder.decode(line)}
       end
     else
-      "NIL"
+      {:ok, "NIL"}
+    end
+  end
+
+  @impl Storage.Behaviour
+  def set(key, value) do
+    {command, shard} = Encoder.encode_set(key, value)
+    key_prefix = Encoder.extract_key_prefix(command)
+
+    if bloom_contains?(shard, key_prefix) do
+      old_value =
+        case Persistence.read_line_by_prefix(shard, command) do
+          nil -> "NIL"
+          line -> Encoder.decode(line)
+        end
+
+      {:already_exists, old_value}
+    else
+      GenServer.call(__MODULE__, {:add_to_filter, shard, key_prefix})
+      Persistence.write(shard, command)
+      {:ok, nil}
     end
   end
 
@@ -75,25 +57,15 @@ defmodule Storage do
     GenServer.call(__MODULE__, {:contains?, shard, key})
   end
 
-  defp extract_key_from_command(command) do
-    key_length = String.slice(command, 0, 3) |> String.to_integer(16)
-    String.slice(command, 0, 3 + key_length)
-  end
-
   defp load_filter_from_file(shard) do
-    file_path = shard <> "_data.txt"
     filter = Filter.new()
 
-    if File.exists?(file_path) do
-      file_path
-      |> File.stream!()
-      |> Enum.reduce(filter, fn line, acc ->
-        key_encoded = extract_key_from_command(String.trim(line))
-        Filter.add(acc, key_encoded)
-      end)
-    else
-      filter
-    end
+    shard
+    |> Persistence.stream_lines()
+    |> Enum.reduce(filter, fn line, acc ->
+      key_encoded = Encoder.extract_key_prefix(String.trim(line))
+      Filter.add(acc, key_encoded)
+    end)
   end
 
   def handle_call({:contains?, shard, key}, _from, state) do
