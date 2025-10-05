@@ -1,0 +1,117 @@
+defmodule Storage.Engine do
+  @moduledoc """
+  Core storage engine logic shared between different storage implementations.
+
+  Handles:
+  - GET operations with Bloom filter optimization
+  - SET operations with persistence and filter updates
+  - Value encoding/decoding
+  - Filter management
+  """
+
+  @doc """
+  Retrieves a value from storage.
+
+  Uses Bloom filter to optimize lookups - if filter says key doesn't exist,
+  we can skip disk I/O.
+
+  ## Parameters
+  - shard_identifier: The shard file identifier (e.g., "00_Alice")
+  - key: The key to retrieve
+  - filter: The Bloom filter for this shard
+
+  ## Returns
+  - {:ok, value} where value is the decoded string or "NIL"
+  """
+  def get(shard_identifier, key, filter) do
+    {command, _shard} = Encoder.encode_get(key)
+    key_prefix = Encoder.extract_key_prefix(command)
+
+    if Filter.contains?(filter, key_prefix) do
+      case Persistence.read_line_by_prefix(shard_identifier, command) do
+        nil -> {:ok, "NIL"}
+        line -> {:ok, Encoder.decode(line)}
+      end
+    else
+      {:ok, "NIL"}
+    end
+  end
+
+  @doc """
+  Sets a value in storage.
+
+  ## Parameters
+  - shard_identifier: The shard file identifier (e.g., "00_Alice")
+  - key: The key to set
+  - value: The Parser.Value struct with type and value
+  - filter: The Bloom filter for this shard
+
+  ## Returns
+  - {:ok, old_value, new_value, updated_filter}
+  """
+  def set(shard_identifier, key, value, filter) do
+    {command, _shard} = Encoder.encode_set(key, value)
+    key_prefix = Encoder.extract_key_prefix(command)
+    new_value_str = encode_value(value)
+
+    old_value =
+      if Filter.contains?(filter, key_prefix) do
+        case Persistence.read_line_by_prefix(shard_identifier, command) do
+          nil -> "NIL"
+          line -> Encoder.decode(line)
+        end
+      else
+        "NIL"
+      end
+
+    Persistence.write(shard_identifier, command)
+    updated_filter = Filter.add(filter, key_prefix)
+
+    {:ok, old_value, new_value_str, updated_filter}
+  end
+
+  @doc """
+  Encodes a Parser.Value into a string representation.
+
+  ## Examples
+      iex> Storage.Engine.encode_value(%Parser.Value{type: :string, value: "test"})
+      "test"
+
+      iex> Storage.Engine.encode_value(%Parser.Value{type: :integer, value: 42})
+      "42"
+
+      iex> Storage.Engine.encode_value(%Parser.Value{type: :boolean, value: true})
+      "true"
+  """
+  def encode_value(%Parser.Value{type: type, value: value}) do
+    case type do
+      :string -> value
+      :integer -> Integer.to_string(value)
+      :boolean -> Atom.to_string(value)
+      :nil -> "NIL"
+    end
+  end
+
+  @doc """
+  Loads a Bloom filter from a shard file.
+
+  Reads all lines from the shard file and populates a Bloom filter
+  with the key prefixes.
+
+  ## Parameters
+  - shard_identifier: The shard file identifier (e.g., "00_Alice")
+
+  ## Returns
+  - A populated Bloom filter
+  """
+  def load_filter(shard_identifier) do
+    filter = Filter.new()
+
+    shard_identifier
+    |> Persistence.stream_lines()
+    |> Enum.reduce(filter, fn line, acc ->
+      key_encoded = Encoder.extract_key_prefix(String.trim(line))
+      Filter.add(acc, key_encoded)
+    end)
+  end
+end
