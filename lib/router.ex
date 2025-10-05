@@ -30,6 +30,24 @@ defmodule Cube.Router do
             {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
           end
 
+        {:ok, %{command: :begin}} ->
+          case Cube.ClientStorage.begin_transaction(client_pid) do
+            :ok -> send_resp(conn, 200, "OK")
+            {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
+          end
+
+        {:ok, %{command: :commit}} ->
+          case Cube.ClientStorage.commit(client_pid) do
+            :ok -> send_resp(conn, 200, "OK")
+            {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
+          end
+
+        {:ok, %{command: :rollback}} ->
+          case Cube.ClientStorage.rollback(client_pid) do
+            :ok -> send_resp(conn, 200, "OK")
+            {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
+          end
+
         {:error, reason} ->
           send_resp(conn, 400, "ERR #{reason}")
       end

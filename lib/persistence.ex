@@ -10,6 +10,8 @@ defmodule Persistence do
     if File.exists?(file_path) do
       file_path
       |> File.stream!()
+      |> Enum.to_list()
+      |> Enum.reverse()
       |> Enum.find(fn line ->
         String.starts_with?(line, prefix)
       end)
