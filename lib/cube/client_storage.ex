@@ -53,7 +53,7 @@ defmodule Cube.ClientStorage do
   def handle_call({:get, key}, _from, state) do
     case state.transaction do
       nil ->
-        result = Cube.GlobalStorage.get(key)
+        result = Cube.GlobalStorage.get(state.client_name, key)
         {:reply, result, state}
 
       transaction ->
@@ -61,7 +61,7 @@ defmodule Cube.ClientStorage do
           nil ->
             case Map.get(transaction.reads, key) do
               nil ->
-                {:ok, value} = Cube.GlobalStorage.get(key)
+                {:ok, value} = Cube.GlobalStorage.get(state.client_name, key)
                 updated_transaction = %{transaction | reads: Map.put(transaction.reads, key, value)}
                 {:reply, {:ok, value}, %{state | transaction: updated_transaction}}
 
@@ -83,8 +83,10 @@ defmodule Cube.ClientStorage do
 
       transaction ->
         conflicts =
-          Enum.filter(transaction.reads, fn {key, expected_value} ->
-            {:ok, current_value} = Cube.GlobalStorage.get(key)
+          transaction.reads
+          |> Enum.reject(fn {key, _value} -> Map.has_key?(transaction.writes, key) end)
+          |> Enum.filter(fn {key, expected_value} ->
+            {:ok, current_value} = Cube.GlobalStorage.get(state.client_name, key)
             current_value != expected_value
           end)
 
@@ -100,7 +102,7 @@ defmodule Cube.ClientStorage do
                   true -> %Parser.Value{type: :string, value: value_str}
                 end
 
-              Cube.GlobalStorage.set(key, parsed_value)
+              Cube.GlobalStorage.set(state.client_name, key, parsed_value)
             end)
 
             {:reply, :ok, %{state | transaction: nil}}
@@ -130,7 +132,7 @@ defmodule Cube.ClientStorage do
 
     case state.transaction do
       nil ->
-        {:ok, old_value, ^new_value_str} = Cube.GlobalStorage.set(key, value)
+        {:ok, old_value, ^new_value_str} = Cube.GlobalStorage.set(state.client_name, key, value)
         {:reply, {:ok, old_value, new_value_str}, state}
 
       transaction ->
@@ -139,7 +141,7 @@ defmodule Cube.ClientStorage do
             nil ->
               case Map.get(transaction.reads, key) do
                 nil ->
-                  {:ok, storage_value} = Cube.GlobalStorage.get(key)
+                  {:ok, storage_value} = Cube.GlobalStorage.get(state.client_name, key)
                   {storage_value, Map.put(transaction.reads, key, storage_value)}
 
                 read_value ->

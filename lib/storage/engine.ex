@@ -28,7 +28,7 @@ defmodule Storage.Engine do
     key_prefix = Encoder.extract_key_prefix(command)
 
     if Filter.contains?(filter, key_prefix) do
-      case Persistence.read_line_by_prefix(shard_identifier, command) do
+      case Persistence.read_line_by_prefix(shard_identifier, key_prefix) do
         nil -> {:ok, "NIL"}
         line -> {:ok, Encoder.decode(line)}
       end
@@ -56,7 +56,7 @@ defmodule Storage.Engine do
 
     old_value =
       if Filter.contains?(filter, key_prefix) do
-        case Persistence.read_line_by_prefix(shard_identifier, command) do
+        case Persistence.read_line_by_prefix(shard_identifier, key_prefix) do
           nil -> "NIL"
           line -> Encoder.decode(line)
         end
