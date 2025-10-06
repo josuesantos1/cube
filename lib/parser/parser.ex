@@ -92,7 +92,7 @@ defmodule Parser.Parser do
         {:ok, %Parser.Value{type: :boolean, value: false}, String.slice(input, 5..-1//1)}
 
       String.starts_with?(input, "nil") ->
-        {:ok, %Parser.Value{type: :nil, value: nil}, String.slice(input, 3..-1//1)}
+        {:ok, %Parser.Value{type: nil, value: nil}, String.slice(input, 3..-1//1)}
 
       true ->
         parse_integer(input)
