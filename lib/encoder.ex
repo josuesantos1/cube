@@ -12,9 +12,10 @@ defmodule Encoder do
       |> Integer.to_string(16)
       |> String.pad_leading(3, "0")
 
-      value = value
-    |> to_string()
-    |> Base.encode16()
+    value =
+      value
+      |> to_string()
+      |> Base.encode16()
 
     length_value = value |> byte_size() |> Integer.to_string(16) |> String.pad_leading(8, "0")
 
@@ -24,7 +25,7 @@ defmodule Encoder do
         :integer -> "1"
         :float -> "2"
         :boolean -> "3"
-        :nil -> "4"
+        nil -> "4"
         _ -> raise ArgumentError, "Unsupported type: #{type}"
       end
 

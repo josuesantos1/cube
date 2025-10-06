@@ -15,6 +15,7 @@ defmodule Filter do
     |> Enum.each(fn pos ->
       :atomics.add(filter.counters, pos + 1, 1)
     end)
+
     filter
   end
 
@@ -23,10 +24,12 @@ defmodule Filter do
     |> get_hash_positions(filter.size, filter.hash_count)
     |> Enum.each(fn pos ->
       current = :atomics.get(filter.counters, pos + 1)
+
       if current > 0 do
         :atomics.sub(filter.counters, pos + 1, 1)
       end
     end)
+
     filter
   end
 

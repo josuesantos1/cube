@@ -48,7 +48,7 @@ defmodule Cube.RouterTest do
 
   describe "POST / - GET command" do
     test "returns NIL for non-existent key" do
-      client_name = "router_get_nil_#{:rand.uniform(100000)}"
+      client_name = "router_get_nil_#{:rand.uniform(100_000)}"
 
       conn =
         conn(:post, "/", "GET nonexistent")
@@ -60,7 +60,7 @@ defmodule Cube.RouterTest do
     end
 
     test "returns value for existing key" do
-      client_name = "router_get_existing_#{:rand.uniform(100000)}"
+      client_name = "router_get_existing_#{:rand.uniform(100_000)}"
 
       _conn1 =
         conn(:post, "/", "SET mykey \"myvalue\"")
@@ -77,7 +77,7 @@ defmodule Cube.RouterTest do
     end
 
     test "returns value for existing key with underscore" do
-      client_name = "router_get_underscore_#{:rand.uniform(100000)}"
+      client_name = "router_get_underscore_#{:rand.uniform(100_000)}"
 
       _conn1 =
         conn(:post, "/", "SET my_key \"my_value\"")
@@ -96,10 +96,11 @@ defmodule Cube.RouterTest do
 
   describe "POST / - SET command" do
     test "returns NIL and new value for new key" do
-      client_name = "router_set_new_#{:rand.uniform(100000)}"
+      client_name = "router_set_new_#{:rand.uniform(100_000)}"
+      key = "newkey_#{:rand.uniform(100_000)}"
 
       conn =
-        conn(:post, "/", "SET newkey \"newvalue\"")
+        conn(:post, "/", "SET #{key} \"newvalue\"")
         |> put_req_header("x-client-name", client_name)
         |> Cube.Router.call(@opts)
 
@@ -108,7 +109,7 @@ defmodule Cube.RouterTest do
     end
 
     test "returns old and new values for existing key" do
-      client_name = "router_set_update_#{:rand.uniform(100000)}"
+      client_name = "router_set_update_#{:rand.uniform(100_000)}"
 
       _conn1 =
         conn(:post, "/", "SET key \"original\"")
@@ -125,7 +126,7 @@ defmodule Cube.RouterTest do
     end
 
     test "handles integer values" do
-      client_name = "router_set_int_#{:rand.uniform(100000)}"
+      client_name = "router_set_int_#{:rand.uniform(100_000)}"
 
       conn =
         conn(:post, "/", "SET age 42")
@@ -137,7 +138,7 @@ defmodule Cube.RouterTest do
     end
 
     test "handles boolean values" do
-      client_name = "router_set_bool_#{:rand.uniform(100000)}"
+      client_name = "router_set_bool_#{:rand.uniform(100_000)}"
 
       conn =
         conn(:post, "/", "SET active true")
@@ -149,7 +150,7 @@ defmodule Cube.RouterTest do
     end
 
     test "handles nil values" do
-      client_name = "router_set_nil_#{:rand.uniform(100000)}"
+      client_name = "router_set_nil_#{:rand.uniform(100_000)}"
 
       conn =
         conn(:post, "/", "SET empty nil")
@@ -161,10 +162,11 @@ defmodule Cube.RouterTest do
     end
 
     test "handles quoted strings with spaces" do
-      client_name = "router_set_spaces_#{:rand.uniform(100000)}"
+      client_name = "router_set_spaces_#{:rand.uniform(100_000)}"
+      key = "message_#{:rand.uniform(100_000)}"
 
       conn =
-        conn(:post, "/", "SET message \"Hello World\"")
+        conn(:post, "/", "SET #{key} \"Hello World\"")
         |> put_req_header("x-client-name", client_name)
         |> Cube.Router.call(@opts)
 
@@ -173,7 +175,7 @@ defmodule Cube.RouterTest do
     end
 
     test "handles escaped quotes" do
-      client_name = "router_set_quotes_#{:rand.uniform(100000)}"
+      client_name = "router_set_quotes_#{:rand.uniform(100_000)}"
 
       conn =
         conn(:post, "/", ~s(SET text "He said \\"Hello\\""))
@@ -187,7 +189,7 @@ defmodule Cube.RouterTest do
 
   describe "POST / - BEGIN command" do
     test "starts new transaction" do
-      client_name = "router_begin_#{:rand.uniform(100000)}"
+      client_name = "router_begin_#{:rand.uniform(100_000)}"
 
       conn =
         conn(:post, "/", "BEGIN")
@@ -199,7 +201,7 @@ defmodule Cube.RouterTest do
     end
 
     test "fails if already in transaction" do
-      client_name = "router_begin_twice_#{:rand.uniform(100000)}"
+      client_name = "router_begin_twice_#{:rand.uniform(100_000)}"
 
       _conn =
         conn(:post, "/", "BEGIN")
@@ -218,7 +220,7 @@ defmodule Cube.RouterTest do
 
   describe "POST / - COMMIT command" do
     test "commits transaction successfully" do
-      client_name = "router_commit_#{:rand.uniform(100000)}"
+      client_name = "router_commit_#{:rand.uniform(100_000)}"
 
       _conn1 =
         conn(:post, "/", "BEGIN")
@@ -240,7 +242,7 @@ defmodule Cube.RouterTest do
     end
 
     test "fails when not in transaction" do
-      client_name = "router_commit_no_tx_#{:rand.uniform(100000)}"
+      client_name = "router_commit_no_tx_#{:rand.uniform(100_000)}"
 
       conn =
         conn(:post, "/", "COMMIT")
@@ -252,7 +254,7 @@ defmodule Cube.RouterTest do
     end
 
     test "persists writes after commit" do
-      client_name = "router_commit_persist_#{:rand.uniform(100000)}"
+      client_name = "router_commit_persist_#{:rand.uniform(100_000)}"
 
       _conn1 =
         conn(:post, "/", "BEGIN")
@@ -281,7 +283,7 @@ defmodule Cube.RouterTest do
 
   describe "POST / - ROLLBACK command" do
     test "rolls back transaction successfully" do
-      client_name = "router_rollback_#{:rand.uniform(100000)}"
+      client_name = "router_rollback_#{:rand.uniform(100_000)}"
 
       _conn1 =
         conn(:post, "/", "BEGIN")
@@ -298,7 +300,7 @@ defmodule Cube.RouterTest do
     end
 
     test "fails when not in transaction" do
-      client_name = "router_rollback_no_tx_#{:rand.uniform(100000)}"
+      client_name = "router_rollback_no_tx_#{:rand.uniform(100_000)}"
 
       conn =
         conn(:post, "/", "ROLLBACK")
@@ -310,7 +312,7 @@ defmodule Cube.RouterTest do
     end
 
     test "discards writes after rollback" do
-      client_name = "router_rollback_discard_#{:rand.uniform(100000)}"
+      client_name = "router_rollback_discard_#{:rand.uniform(100_000)}"
 
       _conn1 =
         conn(:post, "/", "SET key \"original\"")
@@ -344,7 +346,7 @@ defmodule Cube.RouterTest do
 
   describe "POST / - error handling" do
     test "returns 400 for invalid command" do
-      client_name = "router_invalid_#{:rand.uniform(100000)}"
+      client_name = "router_invalid_#{:rand.uniform(100_000)}"
 
       conn =
         conn(:post, "/", "INVALID COMMAND")
@@ -356,7 +358,7 @@ defmodule Cube.RouterTest do
     end
 
     test "returns 400 for malformed GET" do
-      client_name = "router_malformed_get_#{:rand.uniform(100000)}"
+      client_name = "router_malformed_get_#{:rand.uniform(100_000)}"
 
       conn =
         conn(:post, "/", "GET")
@@ -368,7 +370,7 @@ defmodule Cube.RouterTest do
     end
 
     test "returns 400 for malformed SET" do
-      client_name = "router_malformed_set_#{:rand.uniform(100000)}"
+      client_name = "router_malformed_set_#{:rand.uniform(100_000)}"
 
       conn =
         conn(:post, "/", "SET key")
@@ -380,7 +382,7 @@ defmodule Cube.RouterTest do
     end
 
     test "handles empty body" do
-      client_name = "router_empty_body_#{:rand.uniform(100000)}"
+      client_name = "router_empty_body_#{:rand.uniform(100_000)}"
 
       conn =
         conn(:post, "/", "")
@@ -391,38 +393,29 @@ defmodule Cube.RouterTest do
     end
   end
 
-  describe "POST / - client isolation" do
-    test "different clients have isolated data" do
-      client1 = "router_client1_#{:rand.uniform(100000)}"
-      client2 = "router_client2_#{:rand.uniform(100000)}"
+  describe "POST / - shared data across clients" do
+    test "different clients share the same data" do
+      client1 = "router_client1_#{:rand.uniform(100_000)}"
+      client2 = "router_client2_#{:rand.uniform(100_000)}"
+      key = "shared_#{:rand.uniform(100_000)}"
 
-      _conn_setup1 =
-        conn(:post, "/", "SET shared \"client1_value\"")
+      _conn_setup =
+        conn(:post, "/", "SET #{key} \"shared_value\"")
         |> put_req_header("x-client-name", client1)
         |> Cube.Router.call(@opts)
 
-      _conn_setup2 =
-        conn(:post, "/", "SET shared \"client2_value\"")
+      conn =
+        conn(:post, "/", "GET #{key}")
         |> put_req_header("x-client-name", client2)
         |> Cube.Router.call(@opts)
 
-      conn1 =
-        conn(:post, "/", "GET shared")
-        |> put_req_header("x-client-name", client1)
-        |> Cube.Router.call(@opts)
-
-      conn2 =
-        conn(:post, "/", "GET shared")
-        |> put_req_header("x-client-name", client2)
-        |> Cube.Router.call(@opts)
-
-      assert conn1.resp_body == "client1_value"
-      assert conn2.resp_body == "client2_value"
+      assert conn.resp_body == "shared_value"
     end
 
-    test "transactions are isolated between clients" do
-      client1 = "router_tx_client1_#{:rand.uniform(100000)}"
-      client2 = "router_tx_client2_#{:rand.uniform(100000)}"
+    test "transactions are isolated between clients but data is shared" do
+      client1 = "router_tx_client1_#{:rand.uniform(100_000)}"
+      client2 = "router_tx_client2_#{:rand.uniform(100_000)}"
+      key = "tx_key_#{:rand.uniform(100_000)}"
 
       _conn1 =
         conn(:post, "/", "BEGIN")
@@ -430,12 +423,13 @@ defmodule Cube.RouterTest do
         |> Cube.Router.call(@opts)
 
       _conn2 =
-        conn(:post, "/", "SET tx_key \"client1_tx\"")
+        conn(:post, "/", "SET #{key} \"client1_tx\"")
         |> put_req_header("x-client-name", client1)
         |> Cube.Router.call(@opts)
 
+      # Client2 can't see uncommitted transaction from client1
       conn =
-        conn(:post, "/", "GET tx_key")
+        conn(:post, "/", "GET #{key}")
         |> put_req_header("x-client-name", client2)
         |> Cube.Router.call(@opts)
 
@@ -445,7 +439,7 @@ defmodule Cube.RouterTest do
 
   describe "POST / - special characters" do
     test "handles newlines in values" do
-      client_name = "router_newline_#{:rand.uniform(100000)}"
+      client_name = "router_newline_#{:rand.uniform(100_000)}"
 
       _conn1 =
         conn(:post, "/", "SET text \"Line1\\nLine2\"")
@@ -462,7 +456,7 @@ defmodule Cube.RouterTest do
     end
 
     test "handles tabs in values" do
-      client_name = "router_tab_#{:rand.uniform(100000)}"
+      client_name = "router_tab_#{:rand.uniform(100_000)}"
 
       _conn1 =
         conn(:post, "/", "SET text \"Col1\\tCol2\"")
@@ -479,7 +473,7 @@ defmodule Cube.RouterTest do
     end
 
     test "handles emoji in values" do
-      client_name = "router_emoji_#{:rand.uniform(100000)}"
+      client_name = "router_emoji_#{:rand.uniform(100_000)}"
 
       _conn1 =
         conn(:post, "/", "SET message \"Hello 🎉\"")

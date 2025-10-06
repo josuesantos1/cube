@@ -124,7 +124,7 @@ defmodule Storage.EngineTest do
         {%Parser.Value{type: :integer, value: 42}, "42"},
         {%Parser.Value{type: :boolean, value: true}, "true"},
         {%Parser.Value{type: :boolean, value: false}, "false"},
-        {%Parser.Value{type: :nil, value: nil}, "NIL"}
+        {%Parser.Value{type: nil, value: nil}, "NIL"}
       ]
 
       Enum.reduce(test_cases, filter, fn {val, expected}, acc_filter ->
@@ -205,7 +205,7 @@ defmodule Storage.EngineTest do
     end
 
     test "encodes nil value" do
-      value = %Parser.Value{type: :nil, value: nil}
+      value = %Parser.Value{type: nil, value: nil}
       assert Storage.Engine.encode_value(value) == "NIL"
     end
 

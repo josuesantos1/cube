@@ -3,57 +3,87 @@ defmodule ParserTest do
 
   describe "parse/1" do
     test "parses SET command with string value" do
-      assert {:ok, %{command: :set, key: "nome", value: %Parser.Value{type: :string, value: "João"}}} =
+      assert {:ok,
+              %{command: :set, key: "nome", value: %Parser.Value{type: :string, value: "João"}}} =
                Parser.Parser.parse("SET nome \"João\"")
     end
 
     test "parses SET command with integer value" do
-      assert {:ok, %{command: :set, key: "idade", value: %Parser.Value{type: :integer, value: 25}}} =
+      assert {:ok,
+              %{command: :set, key: "idade", value: %Parser.Value{type: :integer, value: 25}}} =
                Parser.Parser.parse("SET idade 25")
     end
 
     test "parses SET command with negative integer" do
-      assert {:ok, %{command: :set, key: "temperatura", value: %Parser.Value{type: :integer, value: -10}}} =
+      assert {:ok,
+              %{
+                command: :set,
+                key: "temperatura",
+                value: %Parser.Value{type: :integer, value: -10}
+              }} =
                Parser.Parser.parse("SET temperatura -10")
     end
 
     test "parses SET command with boolean true" do
-      assert {:ok, %{command: :set, key: "ativo", value: %Parser.Value{type: :boolean, value: true}}} =
+      assert {:ok,
+              %{command: :set, key: "ativo", value: %Parser.Value{type: :boolean, value: true}}} =
                Parser.Parser.parse("SET ativo true")
     end
 
     test "parses SET command with boolean false" do
-      assert {:ok, %{command: :set, key: "inativo", value: %Parser.Value{type: :boolean, value: false}}} =
+      assert {:ok,
+              %{command: :set, key: "inativo", value: %Parser.Value{type: :boolean, value: false}}} =
                Parser.Parser.parse("SET inativo false")
     end
 
     test "parses SET command with nil value" do
-      assert {:ok, %{command: :set, key: "vazio", value: %Parser.Value{type: :nil, value: nil}}} =
+      assert {:ok, %{command: :set, key: "vazio", value: %Parser.Value{type: nil, value: nil}}} =
                Parser.Parser.parse("SET vazio nil")
     end
 
     test "parses SET command with escaped quotes in string" do
-      assert {:ok, %{command: :set, key: "texto", value: %Parser.Value{type: :string, value: "Disse \"olá\""}}} =
+      assert {:ok,
+              %{
+                command: :set,
+                key: "texto",
+                value: %Parser.Value{type: :string, value: "Disse \"olá\""}
+              }} =
                Parser.Parser.parse("SET texto \"Disse \\\"olá\\\"\"")
     end
 
     test "parses SET command with escaped backslash" do
-      assert {:ok, %{command: :set, key: "caminho", value: %Parser.Value{type: :string, value: "C:\\Users"}}} =
+      assert {:ok,
+              %{
+                command: :set,
+                key: "caminho",
+                value: %Parser.Value{type: :string, value: "C:\\Users"}
+              }} =
                Parser.Parser.parse("SET caminho \"C:\\\\Users\"")
     end
 
     test "parses SET command with newline escape" do
-      assert {:ok, %{command: :set, key: "multilinhas", value: %Parser.Value{type: :string, value: "linha1\nlinha2"}}} =
+      assert {:ok,
+              %{
+                command: :set,
+                key: "multilinhas",
+                value: %Parser.Value{type: :string, value: "linha1\nlinha2"}
+              }} =
                Parser.Parser.parse("SET multilinhas \"linha1\\nlinha2\"")
     end
 
     test "parses SET command with tab escape" do
-      assert {:ok, %{command: :set, key: "tabulado", value: %Parser.Value{type: :string, value: "col1\tcol2"}}} =
+      assert {:ok,
+              %{
+                command: :set,
+                key: "tabulado",
+                value: %Parser.Value{type: :string, value: "col1\tcol2"}
+              }} =
                Parser.Parser.parse("SET tabulado \"col1\\tcol2\"")
     end
 
     test "handles extra whitespace" do
-      assert {:ok, %{command: :set, key: "chave", value: %Parser.Value{type: :string, value: "valor"}}} =
+      assert {:ok,
+              %{command: :set, key: "chave", value: %Parser.Value{type: :string, value: "valor"}}} =
                Parser.Parser.parse("  SET   chave   \"valor\"  ")
     end
 
