@@ -241,4 +241,229 @@ defmodule EncoderTest do
       assert byte_size(command1) == byte_size(command2)
     end
   end
+
+  describe "edge cases - special values" do
+    test "encodes empty string" do
+      value = %Parser.Value{type: :string, value: ""}
+      {command, _} = Encoder.encode_set("empty", value)
+      decoded = Encoder.decode(String.trim(command))
+      assert decoded == ""
+    end
+
+    test "encodes nil value" do
+      value = %Parser.Value{type: :nil, value: nil}
+      {command, _} = Encoder.encode_set("null_key", value)
+      assert String.contains?(command, "4")
+    end
+
+    test "encodes zero integer" do
+      value = %Parser.Value{type: :integer, value: 0}
+      {command, _} = Encoder.encode_set("zero", value)
+      decoded = Encoder.decode(String.trim(command))
+      assert decoded == "0"
+    end
+
+    test "encodes negative integer" do
+      value = %Parser.Value{type: :integer, value: -42}
+      {command, _} = Encoder.encode_set("negative", value)
+      decoded = Encoder.decode(String.trim(command))
+      assert decoded == "-42"
+    end
+
+    test "encodes very large integer" do
+      value = %Parser.Value{type: :integer, value: 999_999_999_999}
+      {command, _} = Encoder.encode_set("big", value)
+      decoded = Encoder.decode(String.trim(command))
+      assert decoded == "999999999999"
+    end
+  end
+
+  describe "edge cases - special keys" do
+    test "encodes single character key" do
+      value = %Parser.Value{type: :string, value: "x"}
+      {command, _} = Encoder.encode_set("a", value)
+      prefix = Encoder.extract_key_prefix(command)
+      assert String.length(prefix) > 0
+    end
+
+    test "encodes maximum length key (512 bytes)" do
+      max_key = String.duplicate("x", 512)
+      value = %Parser.Value{type: :string, value: "test"}
+      {command, _} = Encoder.encode_set(max_key, value)
+      assert is_binary(command)
+    end
+
+    test "encodes key with numbers" do
+      value = %Parser.Value{type: :string, value: "test"}
+      {command, _} = Encoder.encode_set("key123", value)
+      assert String.contains?(command, Base.encode16("key123", case: :upper))
+    end
+
+    test "encodes key with underscores" do
+      value = %Parser.Value{type: :string, value: "test"}
+      {command, _} = Encoder.encode_set("my_key_name", value)
+      assert String.contains?(command, Base.encode16("my_key_name", case: :upper))
+    end
+  end
+
+  describe "special characters in values" do
+    test "encodes newline in value" do
+      value = %Parser.Value{type: :string, value: "Line1\nLine2"}
+      {command, _} = Encoder.encode_set("multiline", value)
+      decoded = Encoder.decode(String.trim(command))
+      assert decoded == "Line1\nLine2"
+    end
+
+    test "encodes tab in value" do
+      value = %Parser.Value{type: :string, value: "Col1\tCol2"}
+      {command, _} = Encoder.encode_set("tabbed", value)
+      decoded = Encoder.decode(String.trim(command))
+      assert decoded == "Col1\tCol2"
+    end
+
+    test "encodes quotes in value" do
+      value = %Parser.Value{type: :string, value: ~s(He said "Hello")}
+      {command, _} = Encoder.encode_set("quoted", value)
+      decoded = Encoder.decode(String.trim(command))
+      assert decoded == ~s(He said "Hello")
+    end
+
+    test "encodes backslash in value" do
+      value = %Parser.Value{type: :string, value: "path\\to\\file"}
+      {command, _} = Encoder.encode_set("path", value)
+      decoded = Encoder.decode(String.trim(command))
+      assert decoded == "path\\to\\file"
+    end
+
+    test "encodes emoji in value" do
+      value = %Parser.Value{type: :string, value: "Hello 👋 World 🌍"}
+      {command, _} = Encoder.encode_set("emoji", value)
+      decoded = Encoder.decode(String.trim(command))
+      assert decoded == "Hello 👋 World 🌍"
+    end
+
+    test "encodes null byte in value" do
+      value = %Parser.Value{type: :string, value: "before\0after"}
+      {command, _} = Encoder.encode_set("nullbyte", value)
+      decoded = Encoder.decode(String.trim(command))
+      assert decoded == "before\0after"
+    end
+  end
+
+  describe "consistency and invariants" do
+    test "encode-decode roundtrip preserves all types" do
+      test_cases = [
+        {%Parser.Value{type: :string, value: "test string"}, "test string"},
+        {%Parser.Value{type: :integer, value: 42}, "42"},
+        {%Parser.Value{type: :boolean, value: true}, "true"},
+        {%Parser.Value{type: :boolean, value: false}, "false"}
+      ]
+
+      Enum.each(test_cases, fn {val, expected} ->
+        {command, _} = Encoder.encode_set("key", val)
+        decoded = Encoder.decode(String.trim(command))
+        assert decoded == expected
+      end)
+    end
+
+    test "different values with same key produce same prefix" do
+      v1 = %Parser.Value{type: :string, value: "value1"}
+      v2 = %Parser.Value{type: :string, value: "value2"}
+
+      {cmd1, _} = Encoder.encode_set("same_key", v1)
+      {cmd2, _} = Encoder.encode_set("same_key", v2)
+
+      prefix1 = Encoder.extract_key_prefix(cmd1)
+      prefix2 = Encoder.extract_key_prefix(cmd2)
+
+      assert prefix1 == prefix2
+    end
+
+    test "command always ends with newline" do
+      value = %Parser.Value{type: :string, value: "test"}
+      {command, _} = Encoder.encode_set("key", value)
+      assert String.ends_with?(command, "\n")
+    end
+
+    test "type field is single character" do
+      test_types = [
+        {%Parser.Value{type: :string, value: "x"}, "0"},
+        {%Parser.Value{type: :integer, value: 1}, "1"},
+        {%Parser.Value{type: :boolean, value: true}, "3"},
+        {%Parser.Value{type: :nil, value: nil}, "4"}
+      ]
+
+      Enum.each(test_types, fn {val, expected_type} ->
+        {command, _} = Encoder.encode_set("key", val)
+        cmd = String.trim(command)
+        key_length = String.slice(cmd, 0, 3) |> String.to_integer(16)
+        type_pos = 3 + key_length
+        type = String.slice(cmd, type_pos, 1)
+        assert type == expected_type
+      end)
+    end
+  end
+
+  describe "performance and limits" do
+    test "handles very long string values" do
+      long_value = String.duplicate("x", 10_000)
+      value = %Parser.Value{type: :string, value: long_value}
+      {command, _} = Encoder.encode_set("long", value)
+      decoded = Encoder.decode(String.trim(command))
+      assert decoded == long_value
+    end
+
+    test "value length field can represent large values" do
+      value = %Parser.Value{type: :string, value: "test"}
+      {command, _} = Encoder.encode_set("key", value)
+      cmd = String.trim(command)
+      key_length = String.slice(cmd, 0, 3) |> String.to_integer(16)
+      length_field = String.slice(cmd, 3 + key_length + 1, 8)
+      assert String.length(length_field) == 8
+    end
+
+    test "shard distribution is relatively uniform" do
+      value = %Parser.Value{type: :string, value: "test"}
+
+      shard_counts =
+        1..1000
+        |> Enum.map(fn i ->
+          {_, shard} = Encoder.encode_set("key#{i}", value)
+          String.to_integer(shard)
+        end)
+        |> Enum.frequencies()
+
+      Enum.each(shard_counts, fn {_shard, count} ->
+        assert count >= 30 and count <= 70,
+               "Shard distribution unbalanced: #{count} keys"
+      end)
+    end
+  end
+
+  describe "security and validation" do
+    test "rejects key with 513 bytes" do
+      long_key = String.duplicate("a", 513)
+      value = %Parser.Value{type: :string, value: "test"}
+
+      assert_raise ArgumentError, fn ->
+        Encoder.encode_set(long_key, value)
+      end
+    end
+
+    test "handles binary data in values" do
+      binary_value = <<0, 1, 2, 3, 255>>
+      value = %Parser.Value{type: :string, value: binary_value}
+      {command, _} = Encoder.encode_set("binary", value)
+      decoded = Encoder.decode(String.trim(command))
+      assert decoded == binary_value
+    end
+
+    test "decode handles malformed hex gracefully" do
+      malformed = "00661626300000000ZINVALID"
+
+      assert_raise ArgumentError, fn ->
+        Encoder.decode(malformed)
+      end
+    end
+  end
 end

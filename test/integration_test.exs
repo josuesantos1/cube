@@ -1,6 +1,7 @@
 defmodule Cube.IntegrationTest do
   use ExUnit.Case, async: false
-  use Plug.Test
+  import Plug.Test
+  import Plug.Conn
 
   @opts Cube.Router.init([])
 

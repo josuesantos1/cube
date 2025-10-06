@@ -232,4 +232,242 @@ defmodule Cube.ClientStorageTest do
       assert retrieved == large_value
     end
   end
+
+  describe "transactions - BEGIN" do
+    test "BEGIN starts a new transaction" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_begin_#{:rand.uniform(100000)}")
+
+      result = Cube.ClientStorage.begin_transaction(pid)
+      assert :ok = result
+    end
+
+    test "BEGIN fails if already in transaction" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_begin_twice_#{:rand.uniform(100000)}")
+
+      Cube.ClientStorage.begin_transaction(pid)
+      result = Cube.ClientStorage.begin_transaction(pid)
+
+      assert {:error, "Already in transaction"} = result
+    end
+
+    test "can start new transaction after COMMIT" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_begin_after_commit_#{:rand.uniform(100000)}")
+
+      Cube.ClientStorage.begin_transaction(pid)
+      Cube.ClientStorage.commit(pid)
+
+      result = Cube.ClientStorage.begin_transaction(pid)
+      assert :ok = result
+    end
+
+    test "can start new transaction after ROLLBACK" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_begin_after_rollback_#{:rand.uniform(100000)}")
+
+      Cube.ClientStorage.begin_transaction(pid)
+      Cube.ClientStorage.rollback(pid)
+
+      result = Cube.ClientStorage.begin_transaction(pid)
+      assert :ok = result
+    end
+  end
+
+  describe "transactions - COMMIT" do
+    test "COMMIT fails when not in transaction" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_commit_no_tx_#{:rand.uniform(100000)}")
+
+      result = Cube.ClientStorage.commit(pid)
+      assert {:error, "No transaction in progress"} = result
+    end
+
+    test "COMMIT persists writes to storage" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_commit_persist_#{:rand.uniform(100000)}")
+
+      Cube.ClientStorage.begin_transaction(pid)
+
+      v1 = %Parser.Value{type: :string, value: "Alice"}
+      Cube.ClientStorage.set(pid, "name", v1)
+
+      Cube.ClientStorage.commit(pid)
+
+      {:ok, value} = Cube.ClientStorage.get(pid, "name")
+      assert value == "Alice"
+    end
+
+    test "COMMIT succeeds when no conflicts" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_commit_success_#{:rand.uniform(100000)}")
+
+      v1 = %Parser.Value{type: :integer, value: 100}
+      Cube.ClientStorage.set(pid, "balance", v1)
+
+      Cube.ClientStorage.begin_transaction(pid)
+      {:ok, _old_balance} = Cube.ClientStorage.get(pid, "balance")
+
+      v2 = %Parser.Value{type: :integer, value: 150}
+      Cube.ClientStorage.set(pid, "balance", v2)
+
+      result = Cube.ClientStorage.commit(pid)
+      assert :ok = result
+    end
+
+    test "COMMIT clears transaction state" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_clear_state_#{:rand.uniform(100000)}")
+
+      Cube.ClientStorage.begin_transaction(pid)
+      v1 = %Parser.Value{type: :string, value: "test"}
+      Cube.ClientStorage.set(pid, "key", v1)
+      Cube.ClientStorage.commit(pid)
+
+      result = Cube.ClientStorage.commit(pid)
+      assert {:error, "No transaction in progress"} = result
+    end
+  end
+
+  describe "transactions - ROLLBACK" do
+    test "ROLLBACK fails when not in transaction" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_rollback_no_tx_#{:rand.uniform(100000)}")
+
+      result = Cube.ClientStorage.rollback(pid)
+      assert {:error, "No transaction in progress"} = result
+    end
+
+    test "ROLLBACK discards uncommitted writes" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_rollback_discard_#{:rand.uniform(100000)}")
+
+      v1 = %Parser.Value{type: :string, value: "original"}
+      Cube.ClientStorage.set(pid, "data", v1)
+
+      Cube.ClientStorage.begin_transaction(pid)
+      v2 = %Parser.Value{type: :string, value: "modified"}
+      Cube.ClientStorage.set(pid, "data", v2)
+      Cube.ClientStorage.rollback(pid)
+
+      {:ok, value} = Cube.ClientStorage.get(pid, "data")
+      assert value == "original"
+    end
+
+    test "ROLLBACK clears transaction state" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_rollback_clear_#{:rand.uniform(100000)}")
+
+      Cube.ClientStorage.begin_transaction(pid)
+      Cube.ClientStorage.rollback(pid)
+
+      result = Cube.ClientStorage.rollback(pid)
+      assert {:error, "No transaction in progress"} = result
+    end
+  end
+
+  describe "transactions - snapshot isolation" do
+    test "reads inside transaction see snapshot" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_snapshot_#{:rand.uniform(100000)}")
+
+      v1 = %Parser.Value{type: :integer, value: 100}
+      Cube.ClientStorage.set(pid, "value", v1)
+
+      Cube.ClientStorage.begin_transaction(pid)
+      {:ok, snapshot_value} = Cube.ClientStorage.get(pid, "value")
+
+      assert snapshot_value == "100"
+    end
+
+    test "writes inside transaction are visible to same transaction" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_write_visible_#{:rand.uniform(100000)}")
+
+      Cube.ClientStorage.begin_transaction(pid)
+
+      v1 = %Parser.Value{type: :string, value: "first"}
+      Cube.ClientStorage.set(pid, "key", v1)
+
+      {:ok, value} = Cube.ClientStorage.get(pid, "key")
+      assert value == "first"
+    end
+
+    test "multiple writes to same key in transaction" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_multi_write_#{:rand.uniform(100000)}")
+
+      Cube.ClientStorage.begin_transaction(pid)
+
+      v1 = %Parser.Value{type: :integer, value: 1}
+      Cube.ClientStorage.set(pid, "counter", v1)
+
+      v2 = %Parser.Value{type: :integer, value: 2}
+      Cube.ClientStorage.set(pid, "counter", v2)
+
+      v3 = %Parser.Value{type: :integer, value: 3}
+      Cube.ClientStorage.set(pid, "counter", v3)
+
+      {:ok, value} = Cube.ClientStorage.get(pid, "counter")
+      assert value == "3"
+
+      Cube.ClientStorage.commit(pid)
+
+      {:ok, committed_value} = Cube.ClientStorage.get(pid, "counter")
+      assert committed_value == "3"
+    end
+  end
+
+  describe "transactions - edge cases" do
+    test "transaction with only reads commits successfully" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_read_only_#{:rand.uniform(100000)}")
+
+      v1 = %Parser.Value{type: :string, value: "test"}
+      Cube.ClientStorage.set(pid, "key", v1)
+
+      Cube.ClientStorage.begin_transaction(pid)
+      Cube.ClientStorage.get(pid, "key")
+      Cube.ClientStorage.get(pid, "key")
+
+      result = Cube.ClientStorage.commit(pid)
+      assert :ok = result
+    end
+
+    test "transaction with only writes commits successfully" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_write_only_#{:rand.uniform(100000)}")
+
+      Cube.ClientStorage.begin_transaction(pid)
+
+      v1 = %Parser.Value{type: :string, value: "write1"}
+      Cube.ClientStorage.set(pid, "key1", v1)
+
+      v2 = %Parser.Value{type: :string, value: "write2"}
+      Cube.ClientStorage.set(pid, "key2", v2)
+
+      result = Cube.ClientStorage.commit(pid)
+      assert :ok = result
+    end
+
+    test "empty transaction commits successfully" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_empty_#{:rand.uniform(100000)}")
+
+      Cube.ClientStorage.begin_transaction(pid)
+      result = Cube.ClientStorage.commit(pid)
+
+      assert :ok = result
+    end
+
+    test "reading non-existent key then writing it commits successfully" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_read_nil_write_#{:rand.uniform(100000)}")
+
+      Cube.ClientStorage.begin_transaction(pid)
+
+      {:ok, "NIL"} = Cube.ClientStorage.get(pid, "new_key")
+
+      v1 = %Parser.Value{type: :string, value: "created"}
+      Cube.ClientStorage.set(pid, "new_key", v1)
+
+      result = Cube.ClientStorage.commit(pid)
+      assert :ok = result
+    end
+
+    test "write then read same key in transaction returns written value" do
+      {:ok, pid} = Cube.ClientStorage.start_link("tx_write_read_#{:rand.uniform(100000)}")
+
+      Cube.ClientStorage.begin_transaction(pid)
+
+      v1 = %Parser.Value{type: :string, value: "written"}
+      {:ok, "NIL", "written"} = Cube.ClientStorage.set(pid, "key", v1)
+
+      {:ok, value} = Cube.ClientStorage.get(pid, "key")
+      assert value == "written"
+    end
+  end
 end
