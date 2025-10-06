@@ -1,139 +1,60 @@
 defmodule Cube.ClientStorage do
-  use GenServer
+  @moduledoc """
+  Stateless client storage handling GET/SET operations and transactions.
+  Transaction state is stored in an Agent process.
+  """
 
-  def start_link(client_name) do
-    GenServer.start_link(__MODULE__, client_name, name: via_tuple(client_name))
+  def child_spec(opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [opts]},
+      type: :worker,
+      restart: :permanent,
+      shutdown: 500
+    }
   end
 
-  defp via_tuple(client_name) do
-    {:via, Registry, {Cube.ClientRegistry, client_name}}
+  def start_link(_) do
+    Agent.start_link(fn -> %{} end, name: __MODULE__)
   end
 
-  @impl true
-  def init(client_name) do
-    {:ok, %{client_name: client_name, transaction: nil}}
-  end
-
-  def get(client_pid, key) do
-    GenServer.call(client_pid, {:get, key})
-  end
-
-  def set(client_pid, key, value) do
-    GenServer.call(client_pid, {:set, key, value})
-  end
-
-  def begin_transaction(client_pid) do
-    GenServer.call(client_pid, :begin)
-  end
-
-  def commit(client_pid) do
-    GenServer.call(client_pid, :commit)
-  end
-
-  def rollback(client_pid) do
-    GenServer.call(client_pid, :rollback)
-  end
-
-  @impl true
-  def handle_call(:begin, _from, state) do
-    case state.transaction do
+  def get(client_name, key) do
+    case get_transaction(client_name) do
       nil ->
-        transaction = %{
-          reads: %{},
-          writes: %{}
-        }
-        {:reply, :ok, %{state | transaction: transaction}}
-
-      _active ->
-        {:reply, {:error, "Already in transaction"}, state}
-    end
-  end
-
-  @impl true
-  def handle_call({:get, key}, _from, state) do
-    case state.transaction do
-      nil ->
-        result = Cube.GlobalStorage.get(state.client_name, key)
-        {:reply, result, state}
+        Cube.GlobalStorage.get(key)
 
       transaction ->
         case Map.get(transaction.writes, key) do
           nil ->
             case Map.get(transaction.reads, key) do
               nil ->
-                {:ok, value} = Cube.GlobalStorage.get(state.client_name, key)
-                updated_transaction = %{transaction | reads: Map.put(transaction.reads, key, value)}
-                {:reply, {:ok, value}, %{state | transaction: updated_transaction}}
+                {:ok, value} = Cube.GlobalStorage.get(key)
+
+                updated_transaction = %{
+                  transaction
+                  | reads: Map.put(transaction.reads, key, value)
+                }
+
+                put_transaction(client_name, updated_transaction)
+                {:ok, value}
 
               cached_value ->
-                {:reply, {:ok, cached_value}, state}
+                {:ok, cached_value}
             end
 
           written_value ->
-            {:reply, {:ok, written_value}, state}
+            {:ok, written_value}
         end
     end
   end
 
-  @impl true
-  def handle_call(:commit, _from, state) do
-    case state.transaction do
-      nil ->
-        {:reply, {:error, "No transaction in progress"}, state}
-
-      transaction ->
-        conflicts =
-          transaction.reads
-          |> Enum.reject(fn {key, _value} -> Map.has_key?(transaction.writes, key) end)
-          |> Enum.filter(fn {key, expected_value} ->
-            {:ok, current_value} = Cube.GlobalStorage.get(state.client_name, key)
-            current_value != expected_value
-          end)
-
-        case conflicts do
-          [] ->
-            Enum.each(transaction.writes, fn {key, value_str} ->
-              parsed_value =
-                cond do
-                  value_str == "NIL" -> %Parser.Value{type: :nil, value: nil}
-                  value_str == "true" -> %Parser.Value{type: :boolean, value: true}
-                  value_str == "false" -> %Parser.Value{type: :boolean, value: false}
-                  String.match?(value_str, ~r/^\d+$/) -> %Parser.Value{type: :integer, value: String.to_integer(value_str)}
-                  true -> %Parser.Value{type: :string, value: value_str}
-                end
-
-              Cube.GlobalStorage.set(state.client_name, key, parsed_value)
-            end)
-
-            {:reply, :ok, %{state | transaction: nil}}
-
-          conflicting_keys ->
-            conflicting_key_names = Enum.map(conflicting_keys, fn {key, _} -> key end)
-            error_msg = "Atomicity failure (#{Enum.join(conflicting_key_names, ", ")})"
-            {:reply, {:error, error_msg}, %{state | transaction: nil}}
-        end
-    end
-  end
-
-  @impl true
-  def handle_call(:rollback, _from, state) do
-    case state.transaction do
-      nil ->
-        {:reply, {:error, "No transaction in progress"}, state}
-
-      _transaction ->
-        {:reply, :ok, %{state | transaction: nil}}
-    end
-  end
-
-  @impl true
-  def handle_call({:set, key, value}, _from, state) do
+  def set(client_name, key, value) do
     new_value_str = Storage.Engine.encode_value(value)
 
-    case state.transaction do
+    case get_transaction(client_name) do
       nil ->
-        {:ok, old_value, ^new_value_str} = Cube.GlobalStorage.set(state.client_name, key, value)
-        {:reply, {:ok, old_value, new_value_str}, state}
+        {:ok, old_value, ^new_value_str} = Cube.GlobalStorage.set(key, value)
+        {:ok, old_value, new_value_str}
 
       transaction ->
         {old_value, updated_reads} =
@@ -141,7 +62,7 @@ defmodule Cube.ClientStorage do
             nil ->
               case Map.get(transaction.reads, key) do
                 nil ->
-                  {:ok, storage_value} = Cube.GlobalStorage.get(state.client_name, key)
+                  {:ok, storage_value} = Cube.GlobalStorage.get(key)
                   {storage_value, Map.put(transaction.reads, key, storage_value)}
 
                 read_value ->
@@ -158,8 +79,97 @@ defmodule Cube.ClientStorage do
             reads: updated_reads
         }
 
-        {:reply, {:ok, old_value, new_value_str}, %{state | transaction: updated_transaction}}
+        put_transaction(client_name, updated_transaction)
+        {:ok, old_value, new_value_str}
     end
   end
 
+  def begin_transaction(client_name) do
+    case get_transaction(client_name) do
+      nil ->
+        transaction = %{
+          reads: %{},
+          writes: %{}
+        }
+
+        put_transaction(client_name, transaction)
+        :ok
+
+      _active ->
+        {:error, "Already in transaction"}
+    end
+  end
+
+  def commit(client_name) do
+    case get_transaction(client_name) do
+      nil ->
+        {:error, "No transaction in progress"}
+
+      transaction ->
+        conflicts =
+          transaction.reads
+          |> Enum.reject(fn {key, _value} -> Map.has_key?(transaction.writes, key) end)
+          |> Enum.filter(fn {key, expected_value} ->
+            {:ok, current_value} = Cube.GlobalStorage.get(key)
+            current_value != expected_value
+          end)
+
+        case conflicts do
+          [] ->
+            Enum.each(transaction.writes, fn {key, value_str} ->
+              parsed_value =
+                cond do
+                  value_str == "NIL" ->
+                    %Parser.Value{type: nil, value: nil}
+
+                  value_str == "true" ->
+                    %Parser.Value{type: :boolean, value: true}
+
+                  value_str == "false" ->
+                    %Parser.Value{type: :boolean, value: false}
+
+                  String.match?(value_str, ~r/^\d+$/) ->
+                    %Parser.Value{type: :integer, value: String.to_integer(value_str)}
+
+                  true ->
+                    %Parser.Value{type: :string, value: value_str}
+                end
+
+              Cube.GlobalStorage.set(key, parsed_value)
+            end)
+
+            delete_transaction(client_name)
+            :ok
+
+          conflicting_keys ->
+            delete_transaction(client_name)
+            conflicting_key_names = Enum.map(conflicting_keys, fn {key, _} -> key end)
+            error_msg = "Atomicity failure (#{Enum.join(conflicting_key_names, ", ")})"
+            {:error, error_msg}
+        end
+    end
+  end
+
+  def rollback(client_name) do
+    case get_transaction(client_name) do
+      nil ->
+        {:error, "No transaction in progress"}
+
+      _transaction ->
+        delete_transaction(client_name)
+        :ok
+    end
+  end
+
+  defp get_transaction(client_name) do
+    Agent.get(__MODULE__, fn state -> Map.get(state, client_name) end)
+  end
+
+  defp put_transaction(client_name, transaction) do
+    Agent.update(__MODULE__, fn state -> Map.put(state, client_name, transaction) end)
+  end
+
+  defp delete_transaction(client_name) do
+    Agent.update(__MODULE__, fn state -> Map.delete(state, client_name) end)
+  end
 end
