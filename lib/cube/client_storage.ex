@@ -15,7 +15,10 @@ defmodule Cube.ClientStorage do
   end
 
   def start_link(_) do
-    Agent.start_link(fn -> %{} end, name: __MODULE__)
+    Agent.start_link(
+      fn -> %{transactions: %{}, begin_timestamps: %{}} end,
+      name: __MODULE__
+    )
   end
 
   def get(client_name, key) do
@@ -24,48 +27,34 @@ defmodule Cube.ClientStorage do
         Cube.GlobalStorage.get(key)
 
       transaction ->
-        transaction_age = System.monotonic_time(:millisecond) - Map.get(transaction, :started_at, 0)
-        if transaction_age > 1 do
-          delete_transaction(client_name)
-          Cube.GlobalStorage.get(key)
-        else
-          case Map.get(transaction.writes, key) do
-            nil ->
-              case Map.get(transaction.reads, key) do
-                nil ->
-                  {:ok, value} = Cube.GlobalStorage.get(key)
+        case Map.get(transaction.writes, key) do
+          nil ->
+            {value, updated_reads} = get_cached_or_snapshot_value(client_name, transaction, key)
+            updated_transaction = %{transaction | reads: updated_reads}
+            put_transaction(client_name, updated_transaction)
+            {:ok, value}
 
-                  updated_transaction = %{
-                    transaction
-                    | reads: Map.put(transaction.reads, key, value)
-                  }
-
-                  put_transaction(client_name, updated_transaction)
-                  {:ok, value}
-
-                cached_value ->
-                  {:ok, cached_value}
-              end
-
-            written_value ->
-              {:ok, current_global_value} = Cube.GlobalStorage.get(key)
-              old_value = Map.get(transaction.reads, key, "NIL")
-
-              stale = Enum.any?(transaction.reads, fn {read_key, read_value} ->
-                {:ok, current_value} = Cube.GlobalStorage.get(read_key)
-                current_value != read_value
-              end)
-
-              cond do
-                stale or current_global_value == written_value ->
-                  delete_transaction(client_name)
-                  {:ok, current_global_value}
-
-                true ->
-                  {:ok, old_value, written_value}
-              end
-          end
+          written_value ->
+            {:ok, written_value}
         end
+    end
+  end
+
+  defp get_begin_timestamp(client_name) do
+    Agent.get(__MODULE__, fn state ->
+      Map.get(state.begin_timestamps, client_name)
+    end)
+  end
+
+  defp get_cached_or_snapshot_value(client_name, transaction, key) do
+    case Map.get(transaction.reads, key) do
+      nil ->
+        begin_ts = get_begin_timestamp(client_name)
+        {:ok, value} = Cube.GlobalStorage.get(key, begin_ts)
+        {value, Map.put(transaction.reads, key, value)}
+
+      cached_value ->
+        {cached_value, transaction.reads}
     end
   end
 
@@ -81,14 +70,7 @@ defmodule Cube.ClientStorage do
         {old_value, updated_reads} =
           case Map.get(transaction.writes, key) do
             nil ->
-              case Map.get(transaction.reads, key) do
-                nil ->
-                  {:ok, storage_value} = Cube.GlobalStorage.get(key)
-                  {storage_value, Map.put(transaction.reads, key, storage_value)}
-
-                read_value ->
-                  {read_value, transaction.reads}
-              end
+              get_cached_or_snapshot_value(client_name, transaction, key)
 
             previous_write ->
               {previous_write, transaction.reads}
@@ -97,8 +79,7 @@ defmodule Cube.ClientStorage do
         updated_transaction = %{
           transaction
           | writes: Map.put(transaction.writes, key, new_value_str),
-            reads: updated_reads,
-            started_at: Map.get(transaction, :started_at, System.monotonic_time(:millisecond))
+            reads: updated_reads
         }
 
         put_transaction(client_name, updated_transaction)
@@ -111,16 +92,22 @@ defmodule Cube.ClientStorage do
       nil ->
         transaction = %{
           reads: %{},
-          writes: %{},
-          started_at: System.monotonic_time(:millisecond)
+          writes: %{}
         }
 
         put_transaction(client_name, transaction)
+        put_begin_timestamp(client_name)
         :ok
 
       _active ->
         {:error, "Already in transaction"}
     end
+  end
+
+  defp put_begin_timestamp(client_name) do
+    Agent.update(__MODULE__, fn state ->
+      %{state | begin_timestamps: Map.put(state.begin_timestamps, client_name, System.monotonic_time())}
+    end)
   end
 
   def commit(client_name) do
@@ -131,7 +118,6 @@ defmodule Cube.ClientStorage do
       transaction ->
         conflicts =
           transaction.reads
-          |> Enum.reject(fn {key, _value} -> Map.has_key?(transaction.writes, key) end)
           |> Enum.filter(fn {key, expected_value} ->
             {:ok, current_value} = Cube.GlobalStorage.get(key)
             current_value != expected_value
@@ -161,11 +147,11 @@ defmodule Cube.ClientStorage do
               Cube.GlobalStorage.set(key, parsed_value)
             end)
 
-            delete_transaction(client_name)
+            cleanup_transaction(client_name)
             :ok
 
           conflicting_keys ->
-            delete_transaction(client_name)
+            cleanup_transaction(client_name)
             conflicting_key_names = Enum.map(conflicting_keys, fn {key, _} -> key end)
             error_msg = "Atomicity failure (#{Enum.join(conflicting_key_names, ", ")})"
             {:error, error_msg}
@@ -179,20 +165,27 @@ defmodule Cube.ClientStorage do
         {:error, "No transaction in progress"}
 
       _transaction ->
-        delete_transaction(client_name)
+        cleanup_transaction(client_name)
         :ok
     end
   end
 
   defp get_transaction(client_name) do
-    Agent.get(__MODULE__, fn state -> Map.get(state, client_name) end)
+    Agent.get(__MODULE__, fn state -> Map.get(state.transactions, client_name) end)
   end
 
   defp put_transaction(client_name, transaction) do
-    Agent.update(__MODULE__, fn state -> Map.put(state, client_name, transaction) end)
+    Agent.update(__MODULE__, fn state ->
+      %{state | transactions: Map.put(state.transactions, client_name, transaction)}
+    end)
   end
 
-  defp delete_transaction(client_name) do
-    Agent.update(__MODULE__, fn state -> Map.delete(state, client_name) end)
+  defp cleanup_transaction(client_name) do
+    Agent.update(__MODULE__, fn state ->
+      %{state |
+        transactions: Map.delete(state.transactions, client_name),
+        begin_timestamps: Map.delete(state.begin_timestamps, client_name)
+      }
+    end)
   end
 end

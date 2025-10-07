@@ -7,10 +7,11 @@ defmodule Cube.GlobalStorage do
   @doc """
   Gets a value from the appropriate shard.
   Returns {:ok, value} where value is the decoded string or "NIL"
+  Optional timestamp parameter for MVCC snapshot isolation.
   """
-  def get(key) do
+  def get(key, timestamp \\ nil) do
     shard_str = get_shard(key)
-    Cube.ShardStorage.get(shard_str, key)
+    Cube.ShardStorage.get(shard_str, key, timestamp)
   end
 
   @doc """
