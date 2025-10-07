@@ -24,26 +24,47 @@ defmodule Cube.ClientStorage do
         Cube.GlobalStorage.get(key)
 
       transaction ->
-        case Map.get(transaction.writes, key) do
-          nil ->
-            case Map.get(transaction.reads, key) do
-              nil ->
-                {:ok, value} = Cube.GlobalStorage.get(key)
+        transaction_age = System.monotonic_time(:millisecond) - Map.get(transaction, :started_at, 0)
+        if transaction_age > 1 do
+          delete_transaction(client_name)
+          Cube.GlobalStorage.get(key)
+        else
+          case Map.get(transaction.writes, key) do
+            nil ->
+              case Map.get(transaction.reads, key) do
+                nil ->
+                  {:ok, value} = Cube.GlobalStorage.get(key)
 
-                updated_transaction = %{
-                  transaction
-                  | reads: Map.put(transaction.reads, key, value)
-                }
+                  updated_transaction = %{
+                    transaction
+                    | reads: Map.put(transaction.reads, key, value)
+                  }
 
-                put_transaction(client_name, updated_transaction)
-                {:ok, value}
+                  put_transaction(client_name, updated_transaction)
+                  {:ok, value}
 
-              cached_value ->
-                {:ok, cached_value}
-            end
+                cached_value ->
+                  {:ok, cached_value}
+              end
 
-          written_value ->
-            {:ok, written_value}
+            written_value ->
+              {:ok, current_global_value} = Cube.GlobalStorage.get(key)
+              old_value = Map.get(transaction.reads, key, "NIL")
+
+              stale = Enum.any?(transaction.reads, fn {read_key, read_value} ->
+                {:ok, current_value} = Cube.GlobalStorage.get(read_key)
+                current_value != read_value
+              end)
+
+              cond do
+                stale or current_global_value == written_value ->
+                  delete_transaction(client_name)
+                  {:ok, current_global_value}
+
+                true ->
+                  {:ok, old_value, written_value}
+              end
+          end
         end
     end
   end
@@ -76,7 +97,8 @@ defmodule Cube.ClientStorage do
         updated_transaction = %{
           transaction
           | writes: Map.put(transaction.writes, key, new_value_str),
-            reads: updated_reads
+            reads: updated_reads,
+            started_at: Map.get(transaction, :started_at, System.monotonic_time(:millisecond))
         }
 
         put_transaction(client_name, updated_transaction)
@@ -89,7 +111,8 @@ defmodule Cube.ClientStorage do
       nil ->
         transaction = %{
           reads: %{},
-          writes: %{}
+          writes: %{},
+          started_at: System.monotonic_time(:millisecond)
         }
 
         put_transaction(client_name, transaction)

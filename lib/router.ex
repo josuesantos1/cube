@@ -18,6 +18,7 @@ defmodule Cube.Router do
       case Parser.Parser.parse(body) do
         {:ok, %{command: :get, key: key}} ->
           case Cube.ClientStorage.get(client_name, key) do
+            {:ok, old_value, new_value} -> send_resp(conn, 200, "#{old_value} #{new_value}")
             {:ok, value} -> send_resp(conn, 200, value)
             {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
           end
