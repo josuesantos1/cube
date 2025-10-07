@@ -18,12 +18,22 @@ defmodule Encoder do
   def encode_set(key, %Parser.Value{type: type, value: value}) do
     {key_hexadecimal, key_length} = encode_key(key)
 
+    if value
+    |> to_string()
+    |> byte_size() > 65535 do
+      raise ArgumentError, "Value length exceeds maximum of 65535 bytes"
+    end
+
     value =
       value
       |> to_string()
       |> Base.encode16()
 
-    length_value = value |> byte_size() |> Integer.to_string(16) |> String.pad_leading(8, "0")
+    length_value =
+      value
+      |> byte_size()
+      |> Integer.to_string(16)
+      |> String.pad_leading(4, "0")
 
     type_encoded =
       case type do
@@ -55,10 +65,10 @@ defmodule Encoder do
     _type = String.slice(data_string, 3 + tag_length, 1)
 
     length =
-      String.slice(data_string, 4 + tag_length, 8)
+      String.slice(data_string, 4 + tag_length, 4)
       |> String.to_integer(16)
 
-    value_hex = String.slice(data_string, 12 + tag_length, length)
+    value_hex = String.slice(data_string, 8 + tag_length, length)
 
     case Base.decode16(value_hex, case: :mixed) do
       {:ok, decoded} -> decoded

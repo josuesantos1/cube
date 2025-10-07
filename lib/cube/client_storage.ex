@@ -106,7 +106,10 @@ defmodule Cube.ClientStorage do
 
   defp put_begin_timestamp(client_name) do
     Agent.update(__MODULE__, fn state ->
-      %{state | begin_timestamps: Map.put(state.begin_timestamps, client_name, System.monotonic_time())}
+      %{
+        state
+        | begin_timestamps: Map.put(state.begin_timestamps, client_name, System.monotonic_time())
+      }
     end)
   end
 
@@ -182,9 +185,10 @@ defmodule Cube.ClientStorage do
 
   defp cleanup_transaction(client_name) do
     Agent.update(__MODULE__, fn state ->
-      %{state |
-        transactions: Map.delete(state.transactions, client_name),
-        begin_timestamps: Map.delete(state.begin_timestamps, client_name)
+      %{
+        state
+        | transactions: Map.delete(state.transactions, client_name),
+          begin_timestamps: Map.delete(state.begin_timestamps, client_name)
       }
     end)
   end
