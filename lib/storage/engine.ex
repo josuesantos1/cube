@@ -9,6 +9,17 @@ defmodule Storage.Engine do
   - Filter management
   """
 
+  defp read_value(shard_identifier, key_prefix, filter) do
+    if Filter.contains?(filter, key_prefix) do
+      case Persistence.read_line_by_prefix(shard_identifier, key_prefix) do
+        nil -> "NIL"
+        line -> Encoder.decode(line)
+      end
+    else
+      "NIL"
+    end
+  end
+
   @doc """
   Retrieves a value from storage.
 
@@ -26,15 +37,7 @@ defmodule Storage.Engine do
   def get(shard_identifier, key, filter) do
     {command, _shard} = Encoder.encode_get(key)
     key_prefix = Encoder.extract_key_prefix(command)
-
-    if Filter.contains?(filter, key_prefix) do
-      case Persistence.read_line_by_prefix(shard_identifier, key_prefix) do
-        nil -> {:ok, "NIL"}
-        line -> {:ok, Encoder.decode(line)}
-      end
-    else
-      {:ok, "NIL"}
-    end
+    {:ok, read_value(shard_identifier, key_prefix, filter)}
   end
 
   @doc """
@@ -54,15 +57,7 @@ defmodule Storage.Engine do
     key_prefix = Encoder.extract_key_prefix(command)
     new_value_str = encode_value(value)
 
-    old_value =
-      if Filter.contains?(filter, key_prefix) do
-        case Persistence.read_line_by_prefix(shard_identifier, key_prefix) do
-          nil -> "NIL"
-          line -> Encoder.decode(line)
-        end
-      else
-        "NIL"
-      end
+    old_value = read_value(shard_identifier, key_prefix, filter)
 
     WAL.log(shard_identifier, command)
 

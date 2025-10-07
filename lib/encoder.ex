@@ -1,5 +1,5 @@
 defmodule Encoder do
-  def encode_set(key, %Parser.Value{type: type, value: value}) do
+  defp encode_key(key) do
     if byte_size(key) > 512 do
       raise ArgumentError, "Key length exceeds maximum of 512 bytes"
     end
@@ -11,6 +11,12 @@ defmodule Encoder do
       |> byte_size()
       |> Integer.to_string(16)
       |> String.pad_leading(3, "0")
+
+    {key_hexadecimal, key_length}
+  end
+
+  def encode_set(key, %Parser.Value{type: type, value: value}) do
+    {key_hexadecimal, key_length} = encode_key(key)
 
     value =
       value
@@ -36,18 +42,7 @@ defmodule Encoder do
   end
 
   def encode_get(key) do
-    if byte_size(key) > 512 do
-      raise ArgumentError, "Key length exceeds maximum of 512 bytes"
-    end
-
-    key_hexadecimal = Base.encode16(key, case: :upper)
-
-    key_length =
-      key_hexadecimal
-      |> byte_size()
-      |> Integer.to_string(16)
-      |> String.pad_leading(3, "0")
-
+    {key_hexadecimal, key_length} = encode_key(key)
     shard = get_shard(key_hexadecimal)
     command = key_length <> key_hexadecimal
 

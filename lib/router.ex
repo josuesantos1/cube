@@ -8,6 +8,14 @@ defmodule Cube.Router do
     send_resp(conn, 200, "Hello")
   end
 
+  defp handle_result(conn, result) do
+    case result do
+      :ok -> send_resp(conn, 200, "OK")
+      {:ok, value} -> send_resp(conn, 200, value)
+      {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
+    end
+  end
+
   post "/" do
     {:ok, body, conn} = Plug.Conn.read_body(conn)
     client_name = get_req_header(conn, "x-client-name") |> List.first()
@@ -17,33 +25,20 @@ defmodule Cube.Router do
     else
       case Parser.Parser.parse(body) do
         {:ok, %{command: :get, key: key}} ->
-          case Cube.ClientStorage.get(client_name, key) do
-            {:ok, old_value, new_value} -> send_resp(conn, 200, "#{old_value} #{new_value}")
-            {:ok, value} -> send_resp(conn, 200, value)
-            {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
-          end
+          handle_result(conn, Cube.ClientStorage.get(client_name, key))
 
         {:ok, %{command: :set, key: key, value: value}} ->
           {:ok, old_value, new_value} = Cube.ClientStorage.set(client_name, key, value)
           send_resp(conn, 200, "#{old_value} #{new_value}")
 
         {:ok, %{command: :begin}} ->
-          case Cube.ClientStorage.begin_transaction(client_name) do
-            :ok -> send_resp(conn, 200, "OK")
-            {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
-          end
+          handle_result(conn, Cube.ClientStorage.begin_transaction(client_name))
 
         {:ok, %{command: :commit}} ->
-          case Cube.ClientStorage.commit(client_name) do
-            :ok -> send_resp(conn, 200, "OK")
-            {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
-          end
+          handle_result(conn, Cube.ClientStorage.commit(client_name))
 
         {:ok, %{command: :rollback}} ->
-          case Cube.ClientStorage.rollback(client_name) do
-            :ok -> send_resp(conn, 200, "OK")
-            {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
-          end
+          handle_result(conn, Cube.ClientStorage.rollback(client_name))
 
         {:error, reason} ->
           send_resp(conn, 400, "ERR #{reason}")
