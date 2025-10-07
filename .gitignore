@@ -23,5 +23,7 @@ cube-*.tar
 /tmp/
 
 *_data.txt
+*.log
 .elixir_ls/
 .elixir-tools/
+.vscode/

@@ -427,7 +427,6 @@ defmodule Cube.RouterTest do
         |> put_req_header("x-client-name", client1)
         |> Cube.Router.call(@opts)
 
-      # Client2 can't see uncommitted transaction from client1
       conn =
         conn(:post, "/", "GET #{key}")
         |> put_req_header("x-client-name", client2)

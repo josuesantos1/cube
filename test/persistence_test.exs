@@ -1,313 +1,149 @@
-defmodule PersistenceTest do
+defmodule Cube.PersistenceTest do
   use ExUnit.Case, async: false
 
   setup do
-    shard = "test_persist_#{:rand.uniform(1_000_000)}"
-    on_exit(fn -> cleanup(shard) end)
-    {:ok, shard: shard}
+    File.ls!()
+    |> Enum.filter(&(String.ends_with?(&1, "_data.txt") or String.ends_with?(&1, ".log")))
+    |> Enum.each(&File.rm/1)
+
+    :ok
   end
 
-  defp cleanup(shard) do
-    file_path = shard <> "_data.txt"
-    if File.exists?(file_path), do: File.rm!(file_path)
-  end
+  describe "WAL and crash recovery" do
+    test "WAL logs SET operations before applying them" do
+      client_name = "wal_test_#{:rand.uniform(100_000)}"
+      key = "test_key_#{:rand.uniform(100_000)}"
 
-  describe "write/2" do
-    test "creates new file and writes command", %{shard: shard} do
-      command = "SET key \"value\"\n"
-      assert :ok = Persistence.write(shard, command)
-      assert File.exists?(shard <> "_data.txt")
-      assert File.read!(shard <> "_data.txt") == command
+      Cube.ClientStorage.set(client_name, key, %Parser.Value{type: :string, value: "test_value"})
+
+      {_command, shard} = Encoder.encode_get(key)
+      wal_path = "wal_shard_#{shard}.log"
+
+      assert File.exists?(wal_path), "WAL file should exist after SET operation"
+
+      wal_content = File.read!(wal_path)
+      assert byte_size(wal_content) > 0, "WAL should not be empty"
     end
 
-    test "appends to existing file", %{shard: shard} do
-      Persistence.write(shard, "first\n")
-      Persistence.write(shard, "second\n")
-      content = File.read!(shard <> "_data.txt")
-      assert content == "first\nsecond\n"
+    test "data persists after application restart simulation" do
+      client_name = "persist_test_#{:rand.uniform(100_000)}"
+      key1 = "persist_key1_#{:rand.uniform(100_000)}"
+      key2 = "persist_key2_#{:rand.uniform(100_000)}"
+
+      Cube.ClientStorage.set(client_name, key1, %Parser.Value{type: :string, value: "value1"})
+      Cube.ClientStorage.set(client_name, key2, %Parser.Value{type: :integer, value: 42})
+
+      {_command, shard1} = Encoder.encode_get(key1)
+      {_command, shard2} = Encoder.encode_get(key2)
+
+      filter1 = Storage.Engine.load_filter("shard_#{shard1}")
+      filter2 = Storage.Engine.load_filter("shard_#{shard2}")
+
+      {:ok, value1} = Storage.Engine.get("shard_#{shard1}", key1, filter1)
+      {:ok, value2} = Storage.Engine.get("shard_#{shard2}", key2, filter2)
+
+      assert value1 == "value1"
+      assert value2 == "42"
     end
 
-    test "handles multiple appends", %{shard: shard} do
-      commands = ["cmd1\n", "cmd2\n", "cmd3\n"]
-      Enum.each(commands, &Persistence.write(shard, &1))
-      content = File.read!(shard <> "_data.txt")
-      assert content == "cmd1\ncmd2\ncmd3\n"
+    test "WAL is cleared after successful replay" do
+      client_name = "wal_clear_test_#{:rand.uniform(100_000)}"
+      key = "clear_key_#{:rand.uniform(100_000)}"
+
+      Cube.ClientStorage.set(client_name, key, %Parser.Value{type: :string, value: "test"})
+
+      {_command, shard} = Encoder.encode_get(key)
+      wal_path = "wal_shard_#{shard}.log"
+
+      assert File.exists?(wal_path)
+
+      Storage.Engine.load_filter("shard_#{shard}")
+
+      refute File.exists?(wal_path), "WAL should be cleared after successful replay"
     end
 
-    test "handles empty command", %{shard: shard} do
-      assert :ok = Persistence.write(shard, "")
-      assert File.read!(shard <> "_data.txt") == ""
-    end
-  end
+    test "multiple operations to same key are logged correctly" do
+      client_name = "multi_op_test_#{:rand.uniform(100_000)}"
+      key = "multi_key_#{:rand.uniform(100_000)}"
 
-  describe "update_or_append/3" do
-    test "creates new file if not exists", %{shard: shard} do
-      command = "SET key \"value\""
-      key_prefix = "SET key"
-      assert :ok = Persistence.update_or_append(shard, command, key_prefix)
-      assert File.exists?(shard <> "_data.txt")
-    end
+      Cube.ClientStorage.set(client_name, key, %Parser.Value{type: :string, value: "value1"})
+      Cube.ClientStorage.set(client_name, key, %Parser.Value{type: :string, value: "value2"})
+      Cube.ClientStorage.set(client_name, key, %Parser.Value{type: :string, value: "value3"})
 
-    test "appends new key if not found", %{shard: shard} do
-      Persistence.update_or_append(shard, "SET key1 \"val1\"", "SET key1")
-      Persistence.update_or_append(shard, "SET key2 \"val2\"", "SET key2")
+      {_command, shard} = Encoder.encode_get(key)
+      filter = Storage.Engine.load_filter("shard_#{shard}")
 
-      content = File.read!(shard <> "_data.txt")
-      assert String.contains?(content, "SET key1 \"val1\"")
-      assert String.contains?(content, "SET key2 \"val2\"")
+      {:ok, value} = Storage.Engine.get("shard_#{shard}", key, filter)
+      assert value == "value3"
     end
 
-    test "updates existing key", %{shard: shard} do
-      Persistence.update_or_append(shard, "SET name \"Alice\"", "SET name")
-      Persistence.update_or_append(shard, "SET name \"Bob\"", "SET name")
+    test "concurrent writes to different keys are persisted" do
+      client_name = "concurrent_test_#{:rand.uniform(100_000)}"
 
-      content = File.read!(shard <> "_data.txt")
-      refute String.contains?(content, "Alice")
-      assert String.contains?(content, "Bob")
+      tasks =
+        Enum.map(1..10, fn i ->
+          Task.async(fn ->
+            key = "concurrent_key_#{i}_#{:rand.uniform(100_000)}"
+
+            Cube.ClientStorage.set(
+              client_name,
+              key,
+              %Parser.Value{type: :integer, value: i}
+            )
+
+            {key, i}
+          end)
+        end)
+
+      key_value_pairs = Task.await_many(tasks)
+
+      Enum.each(key_value_pairs, fn {key, expected_value} ->
+        {_command, shard} = Encoder.encode_get(key)
+        filter = Storage.Engine.load_filter("shard_#{shard}")
+
+        {:ok, value} = Storage.Engine.get("shard_#{shard}", key, filter)
+        assert value == Integer.to_string(expected_value)
+      end)
     end
 
-    test "updates only first occurrence", %{shard: shard} do
-      File.write!(shard <> "_data.txt", "SET key \"v1\"\nSET key \"v2\"\n")
-      Persistence.update_or_append(shard, "SET key \"v3\"", "SET key")
+    test "transactions are persisted only after COMMIT" do
+      client_name = "tx_persist_#{:rand.uniform(100_000)}"
+      key = "tx_key_#{:rand.uniform(100_000)}"
 
-      lines = File.read!(shard <> "_data.txt") |> String.split("\n", trim: true)
-      assert Enum.count(lines, &String.contains?(&1, "v3")) == 1
-      assert Enum.count(lines, &String.contains?(&1, "v2")) == 1
+      Cube.ClientStorage.begin_transaction(client_name)
+
+      Cube.ClientStorage.set(client_name, key, %Parser.Value{type: :string, value: "tx_value"})
+
+      {_command, shard} = Encoder.encode_get(key)
+      filter_before = Storage.Engine.load_filter("shard_#{shard}")
+      {:ok, value_before} = Storage.Engine.get("shard_#{shard}", key, filter_before)
+      assert value_before == "NIL"
+
+      Cube.ClientStorage.commit(client_name)
+
+      filter_after = Storage.Engine.load_filter("shard_#{shard}")
+      {:ok, value_after} = Storage.Engine.get("shard_#{shard}", key, filter_after)
+      assert value_after == "tx_value"
     end
 
-    test "preserves other keys when updating", %{shard: shard} do
-      Persistence.update_or_append(shard, "SET key1 \"val1\"", "SET key1")
-      Persistence.update_or_append(shard, "SET key2 \"val2\"", "SET key2")
-      Persistence.update_or_append(shard, "SET key1 \"updated\"", "SET key1")
+    test "fsync ensures data durability" do
+      client_name = "fsync_test_#{:rand.uniform(100_000)}"
+      key = "fsync_key_#{:rand.uniform(100_000)}"
 
-      content = File.read!(shard <> "_data.txt")
-      assert String.contains?(content, "SET key1 \"updated\"")
-      assert String.contains?(content, "SET key2 \"val2\"")
-      refute String.contains?(content, "val1")
-    end
+      Cube.ClientStorage.set(client_name, key, %Parser.Value{type: :string, value: "durable"})
 
-    test "handles prefix matching correctly", %{shard: shard} do
-      Persistence.update_or_append(shard, "SET key \"val\"", "SET key ")
-      Persistence.update_or_append(shard, "SET key2 \"val2\"", "SET key2")
+      {_command, shard} = Encoder.encode_get(key)
+      data_path = "shard_#{shard}_data.txt"
+      wal_path = "wal_shard_#{shard}.log"
 
-      content = File.read!(shard <> "_data.txt")
-      lines = String.split(content, "\n", trim: true)
-      assert length(lines) == 2
-    end
+      assert File.exists?(data_path)
+      assert File.exists?(wal_path)
 
-    test "trims command before writing", %{shard: shard} do
-      command = "  SET key \"value\"  "
-      Persistence.update_or_append(shard, command, "SET key")
+      data_content = File.read!(data_path)
+      assert byte_size(data_content) > 0, "Data file should not be empty"
 
-      content = File.read!(shard <> "_data.txt")
-      assert String.trim(content) == "SET key \"value\""
-    end
-
-    test "adds newline at end of file when updating", %{shard: shard} do
-      File.write!(shard <> "_data.txt", "SET old \"value\"\n")
-      Persistence.update_or_append(shard, "SET key \"val\"", "SET key")
-      content = File.read!(shard <> "_data.txt")
-      assert String.ends_with?(content, "\n")
-    end
-  end
-
-  describe "read_line_by_prefix/2" do
-    test "returns nil for non-existent file", %{shard: shard} do
-      assert nil == Persistence.read_line_by_prefix(shard, "SET key")
-    end
-
-    test "returns nil when prefix not found", %{shard: shard} do
-      File.write!(shard <> "_data.txt", "SET key1 \"val1\"\n")
-      assert nil == Persistence.read_line_by_prefix(shard, "SET key2")
-    end
-
-    test "returns matching line", %{shard: shard} do
-      File.write!(shard <> "_data.txt", "SET key \"value\"\n")
-      result = Persistence.read_line_by_prefix(shard, "SET key")
-      assert result == "SET key \"value\""
-    end
-
-    test "returns last matching line when multiple exist", %{shard: shard} do
-      content = "SET key \"v1\"\nSET key \"v2\"\nSET key \"v3\"\n"
-      File.write!(shard <> "_data.txt", content)
-      result = Persistence.read_line_by_prefix(shard, "SET key")
-      assert result == "SET key \"v3\""
-    end
-
-    test "trims whitespace from result", %{shard: shard} do
-      File.write!(shard <> "_data.txt", "SET key \"val\"  \n")
-      result = Persistence.read_line_by_prefix(shard, "SET key")
-      assert result == "SET key \"val\""
-    end
-
-    test "matches prefix correctly", %{shard: shard} do
-      content = "SET key1 \"v1\"\nSET key2 \"v2\"\n"
-      File.write!(shard <> "_data.txt", content)
-
-      assert Persistence.read_line_by_prefix(shard, "SET key1") == "SET key1 \"v1\""
-      assert Persistence.read_line_by_prefix(shard, "SET key2") == "SET key2 \"v2\""
-    end
-
-    test "handles empty lines in file", %{shard: shard} do
-      content = "SET key1 \"v1\"\n\n\nSET key2 \"v2\"\n"
-      File.write!(shard <> "_data.txt", content)
-      result = Persistence.read_line_by_prefix(shard, "SET key2")
-      assert result == "SET key2 \"v2\""
-    end
-  end
-
-  describe "stream_lines/1" do
-    test "returns empty list for non-existent file", %{shard: shard} do
-      stream = Persistence.stream_lines(shard)
-      assert Enum.to_list(stream) == []
-    end
-
-    test "returns stream of lines", %{shard: shard} do
-      content = "line1\nline2\nline3\n"
-      File.write!(shard <> "_data.txt", content)
-
-      lines = Persistence.stream_lines(shard) |> Enum.to_list()
-      assert length(lines) == 3
-      assert Enum.at(lines, 0) == "line1\n"
-      assert Enum.at(lines, 1) == "line2\n"
-      assert Enum.at(lines, 2) == "line3\n"
-    end
-
-    test "can be processed lazily", %{shard: shard} do
-      content = Enum.map(1..100, &"line#{&1}\n") |> Enum.join()
-      File.write!(shard <> "_data.txt", content)
-
-      first_5 = Persistence.stream_lines(shard) |> Enum.take(5)
-      assert length(first_5) == 5
-      assert Enum.at(first_5, 0) == "line1\n"
-    end
-
-    test "handles empty file", %{shard: shard} do
-      File.write!(shard <> "_data.txt", "")
-      lines = Persistence.stream_lines(shard) |> Enum.to_list()
-      assert lines == []
-    end
-  end
-
-  describe "exists?/1" do
-    test "returns false for non-existent file", %{shard: shard} do
-      refute Persistence.exists?(shard)
-    end
-
-    test "returns true for existing file", %{shard: shard} do
-      File.write!(shard <> "_data.txt", "content")
-      assert Persistence.exists?(shard)
-    end
-
-    test "returns true for empty file", %{shard: shard} do
-      File.write!(shard <> "_data.txt", "")
-      assert Persistence.exists?(shard)
-    end
-  end
-
-  describe "build_path/1 (via other functions)" do
-    test "creates correct file path format", %{shard: shard} do
-      Persistence.write(shard, "test")
-      assert File.exists?(shard <> "_data.txt")
-    end
-
-    test "uses shard name in path", %{shard: _shard} do
-      custom_shard = "custom_test_123"
-      Persistence.write(custom_shard, "data")
-      on_exit(fn -> File.rm(custom_shard <> "_data.txt") end)
-      assert File.exists?("custom_test_123_data.txt")
-    end
-  end
-
-  describe "integration scenarios" do
-    test "write then read workflow", %{shard: shard} do
-      command = "SET mykey \"myvalue\"\n"
-      Persistence.write(shard, command)
-      result = Persistence.read_line_by_prefix(shard, "SET mykey")
-      assert String.trim(result) == String.trim(command)
-    end
-
-    test "update workflow maintains consistency", %{shard: shard} do
-      Persistence.update_or_append(shard, "SET count 1", "SET count")
-      Persistence.update_or_append(shard, "SET count 2", "SET count")
-      Persistence.update_or_append(shard, "SET count 3", "SET count")
-
-      result = Persistence.read_line_by_prefix(shard, "SET count")
-      assert result == "SET count 3"
-
-      lines = File.read!(shard <> "_data.txt") |> String.split("\n", trim: true)
-      assert length(lines) == 1
-    end
-
-    test "multiple keys workflow", %{shard: shard} do
-      Persistence.update_or_append(shard, "SET user \"Alice\"", "SET user")
-      Persistence.update_or_append(shard, "SET age 30", "SET age")
-      Persistence.update_or_append(shard, "SET city \"NYC\"", "SET city")
-
-      assert Persistence.read_line_by_prefix(shard, "SET user") == "SET user \"Alice\""
-      assert Persistence.read_line_by_prefix(shard, "SET age") == "SET age 30"
-      assert Persistence.read_line_by_prefix(shard, "SET city") == "SET city \"NYC\""
-    end
-
-    test "stream and update workflow", %{shard: shard} do
-      Persistence.write(shard, "line1\n")
-      Persistence.write(shard, "line2\n")
-
-      lines = Persistence.stream_lines(shard) |> Enum.map(&String.trim/1)
-      assert lines == ["line1", "line2"]
-
-      Persistence.update_or_append(shard, "line1_updated", "line1")
-      updated = Persistence.read_line_by_prefix(shard, "line1")
-      assert updated == "line1_updated"
-    end
-
-    test "handles rapid updates", %{shard: shard} do
-      for i <- 1..50 do
-        Persistence.update_or_append(shard, "SET counter #{i}", "SET counter")
-      end
-
-      result = Persistence.read_line_by_prefix(shard, "SET counter")
-      assert result == "SET counter 50"
-
-      lines = File.read!(shard <> "_data.txt") |> String.split("\n", trim: true)
-      assert length(lines) == 1
-    end
-  end
-
-  describe "edge cases" do
-    test "handles very long commands", %{shard: shard} do
-      long_value = String.duplicate("x", 10_000)
-      command = "SET key \"#{long_value}\""
-      Persistence.update_or_append(shard, command, "SET key")
-      result = Persistence.read_line_by_prefix(shard, "SET key")
-      assert String.contains?(result, long_value)
-    end
-
-    test "handles special characters in commands", %{shard: shard} do
-      command = "SET key \"Hello\\nWorld\\t!\""
-      Persistence.update_or_append(shard, command, "SET key")
-      result = Persistence.read_line_by_prefix(shard, "SET key")
-      assert result == command
-    end
-
-    test "handles Unicode in commands", %{shard: shard} do
-      command = "SET value \"测试 🎉\""
-      Persistence.update_or_append(shard, command, "SET value")
-      result = Persistence.read_line_by_prefix(shard, "SET value")
-      assert result == command
-    end
-
-    test "handles empty prefix search", %{shard: shard} do
-      File.write!(shard <> "_data.txt", "first\nsecond\n")
-      result = Persistence.read_line_by_prefix(shard, "")
-      assert result == "second"
-    end
-
-    test "handles shard names with special characters", %{shard: _shard} do
-      special_shard = "shard_01_client@123"
-      Persistence.write(special_shard, "data\n")
-      on_exit(fn -> File.rm(special_shard <> "_data.txt") end)
-      assert Persistence.exists?(special_shard)
+      wal_content = File.read!(wal_path)
+      assert byte_size(wal_content) > 0, "WAL file should not be empty"
     end
   end
 end

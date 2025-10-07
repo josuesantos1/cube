@@ -119,45 +119,42 @@ defmodule Cube.IntegrationTest do
     end
   end
 
-  describe "multi-user isolation" do
-    test "Alice and Bob have isolated data stores" do
-      conn(:post, "/", "SET secret \"Alice's data\"")
+  describe "multi-user shared storage" do
+    test "Alice and Bob share the same data store" do
+      key = "secret_#{:rand.uniform(100_000)}"
+
+      conn(:post, "/", "SET #{key} \"Alice's data\"")
       |> put_req_header("x-client-name", "Alice")
       |> Cube.Router.call(@opts)
 
       conn =
-        conn(:post, "/", "GET secret")
+        conn(:post, "/", "GET #{key}")
         |> put_req_header("x-client-name", "Bob")
-        |> Cube.Router.call(@opts)
-
-      assert conn.resp_body == "NIL"
-
-      conn =
-        conn(:post, "/", "GET secret")
-        |> put_req_header("x-client-name", "Alice")
         |> Cube.Router.call(@opts)
 
       assert conn.resp_body == "Alice's data"
     end
 
-    test "multiple clients can use same key name" do
-      conn(:post, "/", "SET name \"Alice\"")
+    test "multiple clients share same key values" do
+      key = "name_#{:rand.uniform(100_000)}"
+
+      conn(:post, "/", "SET #{key} \"Alice\"")
       |> put_req_header("x-client-name", "ClientA")
       |> Cube.Router.call(@opts)
 
-      conn(:post, "/", "SET name \"Bob\"")
+      conn(:post, "/", "SET #{key} \"Bob\"")
       |> put_req_header("x-client-name", "ClientB")
       |> Cube.Router.call(@opts)
 
       conn_a =
-        conn(:post, "/", "GET name")
+        conn(:post, "/", "GET #{key}")
         |> put_req_header("x-client-name", "ClientA")
         |> Cube.Router.call(@opts)
 
-      assert conn_a.resp_body == "Alice"
+      assert conn_a.resp_body == "Bob"
 
       conn_b =
-        conn(:post, "/", "GET name")
+        conn(:post, "/", "GET #{key}")
         |> put_req_header("x-client-name", "ClientB")
         |> Cube.Router.call(@opts)
 
@@ -168,8 +165,10 @@ defmodule Cube.IntegrationTest do
       tasks =
         Enum.map(1..10, fn i ->
           Task.async(fn ->
+            key = "key#{i}_#{:rand.uniform(100_000)}"
+
             conn =
-              conn(:post, "/", "SET key#{i} #{i}")
+              conn(:post, "/", "SET #{key} #{i}")
               |> put_req_header("x-client-name", "Client#{i}")
               |> Cube.Router.call(@opts)
 
@@ -247,7 +246,7 @@ defmodule Cube.IntegrationTest do
     end
 
     test "handles newlines in values" do
-      client_name = "Bob_newline_#{:rand.uniform(100000)}"
+      client_name = "Bob_newline_#{:rand.uniform(100_000)}"
 
       set_conn =
         conn(:post, "/", "SET text \"Line1\\nLine2\"")

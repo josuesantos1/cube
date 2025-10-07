@@ -174,7 +174,7 @@ defmodule EncoderTest do
       prefix = Encoder.extract_key_prefix(command)
 
       assert is_binary(prefix)
-      assert String.length(prefix) > 3 # tamanho (3) + pelo menos 1 byte de chave
+      assert String.length(prefix) > 3
     end
 
     test "same key produces same prefix" do
@@ -251,7 +251,7 @@ defmodule EncoderTest do
     end
 
     test "encodes nil value" do
-      value = %Parser.Value{type: :nil, value: nil}
+      value = %Parser.Value{type: nil, value: nil}
       {command, _} = Encoder.encode_set("null_key", value)
       assert String.contains?(command, "4")
     end
@@ -390,7 +390,7 @@ defmodule EncoderTest do
         {%Parser.Value{type: :string, value: "x"}, "0"},
         {%Parser.Value{type: :integer, value: 1}, "1"},
         {%Parser.Value{type: :boolean, value: true}, "3"},
-        {%Parser.Value{type: :nil, value: nil}, "4"}
+        {%Parser.Value{type: nil, value: nil}, "4"}
       ]
 
       Enum.each(test_types, fn {val, expected_type} ->
