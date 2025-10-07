@@ -127,9 +127,10 @@ defmodule Cube.RouterTest do
 
     test "handles integer values" do
       client_name = "router_set_int_#{:rand.uniform(100_000)}"
+      key = "age_#{:rand.uniform(100_000)}"
 
       conn =
-        conn(:post, "/", "SET age 42")
+        conn(:post, "/", "SET #{key} 42")
         |> put_req_header("x-client-name", client_name)
         |> Cube.Router.call(@opts)
 
@@ -139,9 +140,10 @@ defmodule Cube.RouterTest do
 
     test "handles boolean values" do
       client_name = "router_set_bool_#{:rand.uniform(100_000)}"
+      key = "active_#{:rand.uniform(100_000)}"
 
       conn =
-        conn(:post, "/", "SET active true")
+        conn(:post, "/", "SET #{key} true")
         |> put_req_header("x-client-name", client_name)
         |> Cube.Router.call(@opts)
 
