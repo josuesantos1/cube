@@ -1,8 +1,8 @@
 defmodule Cube.Router do
   use Plug.Router
 
-  plug :match
-  plug :dispatch
+  plug(:match)
+  plug(:dispatch)
 
   get "/" do
     send_resp(conn, 200, "Hello")
@@ -15,35 +15,31 @@ defmodule Cube.Router do
     unless client_name do
       send_resp(conn, 400, "ERR X-Client-Name header required")
     else
-      {:ok, client_pid} = Cube.ClientSupervisor.get_or_start_client(client_name)
-
       case Parser.Parser.parse(body) do
         {:ok, %{command: :get, key: key}} ->
-          case Cube.ClientStorage.get(client_pid, key) do
+          case Cube.ClientStorage.get(client_name, key) do
             {:ok, value} -> send_resp(conn, 200, value)
             {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
           end
 
         {:ok, %{command: :set, key: key, value: value}} ->
-          case Cube.ClientStorage.set(client_pid, key, value) do
-            {:ok, old_value, new_value} -> send_resp(conn, 200, "#{old_value} #{new_value}")
-            {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
-          end
+          {:ok, old_value, new_value} = Cube.ClientStorage.set(client_name, key, value)
+          send_resp(conn, 200, "#{old_value} #{new_value}")
 
         {:ok, %{command: :begin}} ->
-          case Cube.ClientStorage.begin_transaction(client_pid) do
+          case Cube.ClientStorage.begin_transaction(client_name) do
             :ok -> send_resp(conn, 200, "OK")
             {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
           end
 
         {:ok, %{command: :commit}} ->
-          case Cube.ClientStorage.commit(client_pid) do
+          case Cube.ClientStorage.commit(client_name) do
             :ok -> send_resp(conn, 200, "OK")
             {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
           end
 
         {:ok, %{command: :rollback}} ->
-          case Cube.ClientStorage.rollback(client_pid) do
+          case Cube.ClientStorage.rollback(client_name) do
             :ok -> send_resp(conn, 200, "OK")
             {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
           end

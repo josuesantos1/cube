@@ -64,6 +64,8 @@ defmodule Storage.Engine do
         "NIL"
       end
 
+    WAL.log(shard_identifier, command)
+
     Persistence.update_or_append(shard_identifier, command, key_prefix)
     updated_filter = Filter.add(filter, key_prefix)
 
@@ -88,7 +90,7 @@ defmodule Storage.Engine do
       :string -> value
       :integer -> Integer.to_string(value)
       :boolean -> Atom.to_string(value)
-      :nil -> "NIL"
+      nil -> "NIL"
     end
   end
 
@@ -96,15 +98,17 @@ defmodule Storage.Engine do
   Loads a Bloom filter from a shard file.
 
   Reads all lines from the shard file and populates a Bloom filter
-  with the key prefixes.
+  with the key prefixes. Also replays WAL if present.
 
   ## Parameters
-  - shard_identifier: The shard file identifier (e.g., "00_Alice")
+  - shard_identifier: The shard file identifier (e.g., "shard_00")
 
   ## Returns
   - A populated Bloom filter
   """
   def load_filter(shard_identifier) do
+    replay_wal(shard_identifier)
+
     filter = Filter.new()
 
     shard_identifier
@@ -113,5 +117,16 @@ defmodule Storage.Engine do
       key_encoded = Encoder.extract_key_prefix(String.trim(line))
       Filter.add(acc, key_encoded)
     end)
+  end
+
+  defp replay_wal(shard_identifier) do
+    shard_identifier
+    |> WAL.replay()
+    |> Enum.each(fn command ->
+      key_prefix = Encoder.extract_key_prefix(command)
+      Persistence.update_or_append(shard_identifier, command, key_prefix)
+    end)
+
+    WAL.clear(shard_identifier)
   end
 end

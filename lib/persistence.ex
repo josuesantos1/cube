@@ -1,6 +1,7 @@
 defmodule Persistence do
   def write(shard, command) do
     file_path = build_path(shard)
+
     case File.write(file_path, command, [:append]) do
       :ok -> :ok
       {:error, reason} -> {:error, reason}
@@ -10,33 +11,44 @@ defmodule Persistence do
   def update_or_append(shard, command, key_prefix) do
     file_path = build_path(shard)
 
-    if File.exists?(file_path) do
-      lines =
-        file_path
-        |> File.stream!()
-        |> Enum.map(&String.trim/1)
-        |> Enum.to_list()
+    result =
+      if File.exists?(file_path) do
+        lines =
+          file_path
+          |> File.stream!()
+          |> Enum.map(&String.trim/1)
+          |> Enum.to_list()
 
-      {updated_lines, found} =
-        Enum.map_reduce(lines, false, fn line, found ->
-          if String.starts_with?(line, key_prefix) and not found do
-            {String.trim(command), true}
+        {updated_lines, found} =
+          Enum.map_reduce(lines, false, fn line, found ->
+            if String.starts_with?(line, key_prefix) and not found do
+              {String.trim(command), true}
+            else
+              {line, found}
+            end
+          end)
+
+        final_lines =
+          if found do
+            updated_lines
           else
-            {line, found}
+            updated_lines ++ [String.trim(command)]
           end
-        end)
 
-      final_lines =
-        if found do
-          updated_lines
-        else
-          updated_lines ++ [String.trim(command)]
-        end
+        content = Enum.join(final_lines, "\n") <> "\n"
+        File.write(file_path, content)
+      else
+        File.write(file_path, command)
+      end
 
-      content = Enum.join(final_lines, "\n") <> "\n"
-      File.write(file_path, content)
-    else
-      File.write(file_path, command)
+    case result do
+      :ok ->
+        {:ok, io_device} = File.open(file_path, [:read])
+        :file.sync(io_device)
+        File.close(io_device)
+
+      error ->
+        error
     end
   end
 
