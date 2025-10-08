@@ -15,7 +15,7 @@ defmodule Encoder do
     {key_hexadecimal, key_length}
   end
 
-  def encode_set(key, %Parser.Value{type: type, value: value} = parser_value) do
+  def encode_set(key, %Parser.Value{type: type, value: _value} = parser_value) do
     {key_hexadecimal, key_length} = encode_key(key)
 
     value_str = Storage.Engine.encode_value(parser_value)
