@@ -146,4 +146,186 @@ defmodule Cube.PersistenceTest do
       assert byte_size(wal_content) > 0, "WAL file should not be empty"
     end
   end
+
+  describe "Persistence module functions" do
+    test "write/2 appends command to file" do
+      shard = "test_write_#{:rand.uniform(100_000)}"
+      command = "test_command_1\n"
+
+      assert :ok = Persistence.write(shard, command)
+      assert Persistence.exists?(shard)
+
+      content = File.read!("#{shard}_data.txt")
+      assert String.contains?(content, "test_command_1")
+    end
+
+    test "write/2 appends multiple commands" do
+      shard = "test_multi_write_#{:rand.uniform(100_000)}"
+
+      Persistence.write(shard, "command1\n")
+      Persistence.write(shard, "command2\n")
+      Persistence.write(shard, "command3\n")
+
+      content = File.read!("#{shard}_data.txt")
+      assert String.contains?(content, "command1")
+      assert String.contains?(content, "command2")
+      assert String.contains?(content, "command3")
+    end
+
+    test "update_or_append/3 appends when key doesn't exist" do
+      shard = "test_append_#{:rand.uniform(100_000)}"
+      command = "key1_data\n"
+      key_prefix = "key1"
+
+      Persistence.update_or_append(shard, command, key_prefix)
+
+      assert Persistence.exists?(shard)
+      content = File.read!("#{shard}_data.txt")
+      assert String.contains?(content, "key1_data")
+    end
+
+    test "update_or_append/3 updates existing key" do
+      shard = "test_update_#{:rand.uniform(100_000)}"
+
+      Persistence.update_or_append(shard, "key1_old\n", "key1")
+      Persistence.update_or_append(shard, "key1_new\n", "key1")
+
+      content = File.read!("#{shard}_data.txt")
+      assert String.contains?(content, "key1_new")
+      refute String.contains?(content, "key1_old")
+    end
+
+    test "update_or_append/3 only updates first occurrence" do
+      shard = "test_first_update_#{:rand.uniform(100_000)}"
+
+      Persistence.write(shard, "abc_v1\n")
+      Persistence.write(shard, "abc_v2\n")
+      Persistence.update_or_append(shard, "abc_v3\n", "abc")
+
+      lines =
+        File.read!("#{shard}_data.txt")
+        |> String.split("\n", trim: true)
+
+      assert Enum.count(lines, &String.contains?(&1, "abc_v3")) == 1
+      assert Enum.count(lines, &String.contains?(&1, "abc_v2")) == 1
+      refute Enum.any?(lines, &String.contains?(&1, "abc_v1"))
+    end
+
+    test "read_line_by_prefix/2 returns nil for non-existent shard" do
+      shard = "nonexistent_#{:rand.uniform(100_000)}"
+      assert Persistence.read_line_by_prefix(shard, "key") == nil
+    end
+
+    test "read_line_by_prefix/2 returns nil for non-matching prefix" do
+      shard = "test_no_match_#{:rand.uniform(100_000)}"
+      Persistence.write(shard, "key1_data\n")
+
+      assert Persistence.read_line_by_prefix(shard, "key2") == nil
+    end
+
+    test "read_line_by_prefix/2 returns last matching line" do
+      shard = "test_last_match_#{:rand.uniform(100_000)}"
+
+      Persistence.write(shard, "key1_v1\n")
+      Persistence.write(shard, "key2_data\n")
+      Persistence.write(shard, "key1_v2\n")
+
+      result = Persistence.read_line_by_prefix(shard, "key1")
+      assert result == "key1_v2"
+    end
+
+    test "read_line_by_prefix/2 finds exact prefix match" do
+      shard = "test_exact_#{:rand.uniform(100_000)}"
+
+      Persistence.write(shard, "abc123_data\n")
+      Persistence.write(shard, "abc_other\n")
+
+      result = Persistence.read_line_by_prefix(shard, "abc123")
+      assert result == "abc123_data"
+    end
+
+    test "stream_lines/1 returns empty list for non-existent shard" do
+      shard = "nonexistent_stream_#{:rand.uniform(100_000)}"
+      assert Enum.to_list(Persistence.stream_lines(shard)) == []
+    end
+
+    test "stream_lines/1 streams all lines" do
+      shard = "test_stream_#{:rand.uniform(100_000)}"
+
+      Persistence.write(shard, "line1\n")
+      Persistence.write(shard, "line2\n")
+      Persistence.write(shard, "line3\n")
+
+      lines =
+        Persistence.stream_lines(shard)
+        |> Enum.map(&String.trim/1)
+        |> Enum.to_list()
+
+      assert length(lines) == 3
+      assert "line1" in lines
+      assert "line2" in lines
+      assert "line3" in lines
+    end
+
+    test "exists?/1 returns false for non-existent shard" do
+      shard = "never_created_#{:rand.uniform(100_000)}"
+      refute Persistence.exists?(shard)
+    end
+
+    test "exists?/1 returns true for existing shard" do
+      shard = "test_exists_#{:rand.uniform(100_000)}"
+      Persistence.write(shard, "data\n")
+
+      assert Persistence.exists?(shard)
+    end
+
+    test "update_or_append/3 calls fsync for durability" do
+      shard = "test_fsync_#{:rand.uniform(100_000)}"
+      command = "durable_data\n"
+      key_prefix = "durable"
+
+      assert :ok = Persistence.update_or_append(shard, command, key_prefix)
+
+      assert File.exists?("#{shard}_data.txt")
+      content = File.read!("#{shard}_data.txt")
+      assert String.contains?(content, "durable_data")
+    end
+
+    test "handles Unicode characters correctly" do
+      shard = "test_unicode_#{:rand.uniform(100_000)}"
+      command = "你好世界_data\n"
+      key_prefix = "你好"
+
+      Persistence.update_or_append(shard, command, key_prefix)
+
+      result = Persistence.read_line_by_prefix(shard, key_prefix)
+      assert result == "你好世界_data"
+    end
+
+    test "handles empty file correctly" do
+      shard = "test_empty_#{:rand.uniform(100_000)}"
+      File.write!("#{shard}_data.txt", "")
+
+      assert Persistence.exists?(shard)
+      assert Persistence.read_line_by_prefix(shard, "any") == nil
+
+      lines = Enum.to_list(Persistence.stream_lines(shard))
+      assert length(lines) == 0 || lines == [""]
+    end
+
+    test "preserves line order in update_or_append" do
+      shard = "test_order_#{:rand.uniform(100_000)}"
+
+      Persistence.update_or_append(shard, "key1\n", "key1")
+      Persistence.update_or_append(shard, "key2\n", "key2")
+      Persistence.update_or_append(shard, "key3\n", "key3")
+      Persistence.update_or_append(shard, "key2_updated\n", "key2")
+
+      lines =
+        File.read!("#{shard}_data.txt")
+        |> String.split("\n", trim: true)
+
+      assert lines == ["key1", "key2_updated", "key3"]
+    end
+  end
 end
