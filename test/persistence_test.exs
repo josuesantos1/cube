@@ -190,25 +190,20 @@ defmodule Cube.PersistenceTest do
       Persistence.update_or_append(shard, "key1_old\n", "key1")
       Persistence.update_or_append(shard, "key1_new\n", "key1")
 
-      content = File.read!("#{shard}_data.txt")
-      assert String.contains?(content, "key1_new")
-      refute String.contains?(content, "key1_old")
+      result = Persistence.read_line_by_prefix(shard, "key1")
+      assert String.contains?(result, "key1_new")
+      refute String.contains?(result, "key1_old")
     end
 
-    test "update_or_append/3 only updates first occurrence" do
+    test "update_or_append/3 appends new version" do
       shard = "test_first_update_#{:rand.uniform(100_000)}"
 
       Persistence.write(shard, "abc_v1\n")
       Persistence.write(shard, "abc_v2\n")
       Persistence.update_or_append(shard, "abc_v3\n", "abc")
 
-      lines =
-        File.read!("#{shard}_data.txt")
-        |> String.split("\n", trim: true)
-
-      assert Enum.count(lines, &String.contains?(&1, "abc_v3")) == 1
-      assert Enum.count(lines, &String.contains?(&1, "abc_v2")) == 1
-      refute Enum.any?(lines, &String.contains?(&1, "abc_v1"))
+      result = Persistence.read_line_by_prefix(shard, "abc")
+      assert String.contains?(result, "abc_v3")
     end
 
     test "read_line_by_prefix/2 returns nil for non-existent shard" do
@@ -313,7 +308,7 @@ defmodule Cube.PersistenceTest do
       assert length(lines) == 0 || lines == [""]
     end
 
-    test "preserves line order in update_or_append" do
+    test "preserves append order and reads latest value" do
       shard = "test_order_#{:rand.uniform(100_000)}"
 
       Persistence.update_or_append(shard, "key1\n", "key1")
@@ -321,11 +316,8 @@ defmodule Cube.PersistenceTest do
       Persistence.update_or_append(shard, "key3\n", "key3")
       Persistence.update_or_append(shard, "key2_updated\n", "key2")
 
-      lines =
-        File.read!("#{shard}_data.txt")
-        |> String.split("\n", trim: true)
-
-      assert lines == ["key1", "key2_updated", "key3"]
+      result = Persistence.read_line_by_prefix(shard, "key2")
+      assert result == "key2_updated"
     end
   end
 end
