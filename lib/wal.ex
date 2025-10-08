@@ -23,8 +23,8 @@ defmodule WAL do
   def log(shard_identifier, command) do
     file_path = build_wal_path(shard_identifier)
 
-    with :ok <- File.write(file_path, command, [:append]),
-         {:ok, io_device} <- File.open(file_path, [:read]),
+    with {:ok, io_device} <- File.open(file_path, [:append, :raw, :binary]),
+         :ok <- IO.binwrite(io_device, command),
          :ok <- :file.sync(io_device),
          :ok <- File.close(io_device) do
       :ok

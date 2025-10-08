@@ -46,72 +46,31 @@ defmodule Persistence do
   end
 
   def update_or_append(shard, command, key_prefix) do
-    GenServer.call(__MODULE__, {:update_or_append, shard, command, key_prefix})
+    GenServer.call(__MODULE__, {:update_or_append, shard, command, key_prefix}, 30_000)
   end
 
-  defp do_update_or_append(shard, command, key_prefix) do
+  defp do_update_or_append(shard, command, _key_prefix) do
     file_path = build_path(shard)
-
-    result =
-      if File.exists?(file_path) do
-        found = file_exists_with_prefix?(file_path, key_prefix)
-
-        if found do
-          update_line_in_place(file_path, key_prefix, command)
-        else
-          File.write(file_path, String.trim(command) <> "\n", [:append])
-        end
-      else
-        File.write(file_path, command)
-      end
-
-    case result do
-      :ok -> :ok
-      error -> error
-    end
-  end
-
-  defp file_exists_with_prefix?(file_path, key_prefix) do
-    file_path
-    |> File.stream!([], :line)
-    |> Enum.any?(fn line -> String.starts_with?(line, key_prefix) end)
-  end
-
-  defp update_line_in_place(file_path, key_prefix, command) do
-    temp_path = file_path <> ".tmp"
-
-    file_path
-    |> File.stream!([], :line)
-    |> Stream.transform(false, fn line, found ->
-      if String.starts_with?(line, key_prefix) and not found do
-        {[String.trim(command) <> "\n"], true}
-      else
-        {[line], found}
-      end
-    end)
-    |> Stream.into(File.stream!(temp_path))
-    |> Stream.run()
-
-    File.rename(temp_path, file_path)
+    File.write(file_path, String.trim(command) <> "\n", [:append, :sync])
   end
 
   def read_line_by_prefix(shard, prefix) do
-    GenServer.call(__MODULE__, {:read_line_by_prefix, shard, prefix})
+    GenServer.call(__MODULE__, {:read_line_by_prefix, shard, prefix}, 30_000)
   end
 
   defp do_read_line_by_prefix(shard, prefix) do
     file_path = build_path(shard)
 
     if File.exists?(file_path) do
-      file_path
+      result = file_path
       |> File.stream!([], :line)
-      |> Enum.reduce(nil, fn line, acc ->
-        if String.starts_with?(line, prefix) do
-          String.trim(line)
-        else
-          acc
-        end
-      end)
+      |> Enum.reverse()
+      |> Enum.find(fn line -> String.starts_with?(line, prefix) end)
+
+      case result do
+        nil -> nil
+        line -> String.trim(line)
+      end
     else
       nil
     end
