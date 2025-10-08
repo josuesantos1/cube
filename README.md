@@ -22,16 +22,16 @@ A high-performance, sharded key-value database with ACID transactions built in E
 
 ```bash
 # Start with Docker Compose
-docker-compose up -d
+docker compose up -d
 
 # View logs
-docker-compose logs -f cube
+docker compose logs -f cube
 
 # Stop
-docker-compose down
+docker compose down
 
 # Stop and remove data
-docker-compose down -v
+docker compose down -v
 ```
 
 ### Local Installation
