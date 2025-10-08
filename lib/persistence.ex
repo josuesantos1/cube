@@ -39,13 +39,10 @@ defmodule Persistence do
     {:reply, value, %{state | cache: new_cache}}
   end
 
+  @doc false
   def write(shard, command) do
     file_path = build_path(shard)
-
-    case File.write(file_path, command, [:append]) do
-      :ok -> :ok
-      {:error, reason} -> {:error, reason}
-    end
+    File.write(file_path, command, [:append])
   end
 
   def update_or_append(shard, command, key_prefix) do

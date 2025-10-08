@@ -26,9 +26,4 @@ defmodule Cube.ShardSupervisor do
 
     Supervisor.init(children, strategy: :one_for_one)
   end
-
-  @doc """
-  Returns the total number of shards in the system.
-  """
-  def shard_count, do: @shard_count
 end
