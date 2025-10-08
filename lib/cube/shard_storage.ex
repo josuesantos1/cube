@@ -5,6 +5,8 @@ defmodule Cube.ShardStorage do
   """
   use GenServer
 
+  @max_versions 10
+
   def start_link(shard_number) do
     shard_str = String.pad_leading(Integer.to_string(shard_number), 2, "0")
     GenServer.start_link(__MODULE__, shard_str, name: via_tuple(shard_str))
@@ -20,7 +22,7 @@ defmodule Cube.ShardStorage do
   Optional timestamp parameter for MVCC snapshot isolation.
   """
   def get(shard_str, key, timestamp \\ nil) do
-    GenServer.call(via_tuple(shard_str), {:get, key, timestamp})
+    GenServer.call(via_tuple(shard_str), {:get, key, timestamp}, 30_000)
   end
 
   @doc """
@@ -28,7 +30,7 @@ defmodule Cube.ShardStorage do
   Returns {:ok, old_value, new_value}
   """
   def set(shard_str, key, value) do
-    GenServer.call(via_tuple(shard_str), {:set, key, value})
+    GenServer.call(via_tuple(shard_str), {:set, key, value}, 30_000)
   end
 
   @impl true
@@ -76,7 +78,7 @@ defmodule Cube.ShardStorage do
     timestamp = System.monotonic_time()
     current_versions = Map.get(state.versions, key, [])
     new_versions = [{timestamp, new_value_str} | current_versions]
-    trimmed_versions = Enum.take(new_versions, 100)
+    trimmed_versions = Enum.take(new_versions, @max_versions)
     updated_versions = Map.put(state.versions, key, trimmed_versions)
 
     new_state = %{state | filter: updated_filter, versions: updated_versions}

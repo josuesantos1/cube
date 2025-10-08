@@ -3,6 +3,9 @@ defmodule Cube.ClientStorage do
   Stateless client storage handling GET/SET operations and transactions.
   Transaction state is stored in an Agent process.
   """
+  use GenServer
+
+  @transaction_timeout 3_600_000
 
   def child_spec(opts) do
     %{
@@ -15,10 +18,33 @@ defmodule Cube.ClientStorage do
   end
 
   def start_link(_) do
-    Agent.start_link(
-      fn -> %{transactions: %{}, begin_timestamps: %{}} end,
-      name: __MODULE__
-    )
+    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+  end
+
+  @impl true
+  def init(_) do
+    schedule_cleanup()
+    {:ok, %{transactions: %{}, begin_timestamps: %{}}}
+  end
+
+  @impl true
+  def handle_info(:cleanup_stale_transactions, state) do
+    now = System.monotonic_time(:millisecond)
+    cutoff = now - @transaction_timeout
+
+    new_timestamps =
+      state.begin_timestamps
+      |> Enum.filter(fn {_client, ts} -> ts > cutoff end)
+      |> Map.new()
+
+    new_transactions = Map.take(state.transactions, Map.keys(new_timestamps))
+
+    schedule_cleanup()
+    {:noreply, %{transactions: new_transactions, begin_timestamps: new_timestamps}}
+  end
+
+  defp schedule_cleanup do
+    Process.send_after(self(), :cleanup_stale_transactions, 60_000)
   end
 
   def get(client_name, key) do
@@ -41,17 +67,17 @@ defmodule Cube.ClientStorage do
   end
 
   defp get_begin_timestamp(client_name) do
-    Agent.get(__MODULE__, fn state ->
-      Map.get(state.begin_timestamps, client_name)
-    end)
+    GenServer.call(__MODULE__, {:get_begin_timestamp, client_name})
   end
 
   defp get_cached_or_snapshot_value(client_name, transaction, key) do
     case Map.get(transaction.reads, key) do
       nil ->
         begin_ts = get_begin_timestamp(client_name)
-        {:ok, value} = Cube.GlobalStorage.get(key, begin_ts)
-        {value, Map.put(transaction.reads, key, value)}
+        case Cube.GlobalStorage.get(key, begin_ts) do
+          {:ok, value} -> {value, Map.put(transaction.reads, key, value)}
+          {:error, _reason} -> {"NIL", Map.put(transaction.reads, key, "NIL")}
+        end
 
       cached_value ->
         {cached_value, transaction.reads}
@@ -105,12 +131,7 @@ defmodule Cube.ClientStorage do
   end
 
   defp put_begin_timestamp(client_name) do
-    Agent.update(__MODULE__, fn state ->
-      %{
-        state
-        | begin_timestamps: Map.put(state.begin_timestamps, client_name, System.monotonic_time())
-      }
-    end)
+    GenServer.call(__MODULE__, {:put_begin_timestamp, client_name})
   end
 
   def commit(client_name) do
@@ -122,8 +143,10 @@ defmodule Cube.ClientStorage do
         conflicts =
           transaction.reads
           |> Enum.filter(fn {key, expected_value} ->
-            {:ok, current_value} = Cube.GlobalStorage.get(key)
-            current_value != expected_value
+            case Cube.GlobalStorage.get(key) do
+              {:ok, current_value} -> current_value != expected_value
+              {:error, _} -> false
+            end
           end)
 
         case conflicts do
@@ -174,22 +197,45 @@ defmodule Cube.ClientStorage do
   end
 
   defp get_transaction(client_name) do
-    Agent.get(__MODULE__, fn state -> Map.get(state.transactions, client_name) end)
+    GenServer.call(__MODULE__, {:get_transaction, client_name})
   end
 
   defp put_transaction(client_name, transaction) do
-    Agent.update(__MODULE__, fn state ->
-      %{state | transactions: Map.put(state.transactions, client_name, transaction)}
-    end)
+    GenServer.call(__MODULE__, {:put_transaction, client_name, transaction})
   end
 
   defp cleanup_transaction(client_name) do
-    Agent.update(__MODULE__, fn state ->
-      %{
-        state
-        | transactions: Map.delete(state.transactions, client_name),
-          begin_timestamps: Map.delete(state.begin_timestamps, client_name)
-      }
-    end)
+    GenServer.call(__MODULE__, {:cleanup_transaction, client_name})
+  end
+
+  @impl true
+  def handle_call({:get_begin_timestamp, client_name}, _from, state) do
+    {:reply, Map.get(state.begin_timestamps, client_name), state}
+  end
+
+  @impl true
+  def handle_call({:put_begin_timestamp, client_name}, _from, state) do
+    new_timestamps = Map.put(state.begin_timestamps, client_name, System.monotonic_time(:millisecond))
+    {:reply, :ok, %{state | begin_timestamps: new_timestamps}}
+  end
+
+  @impl true
+  def handle_call({:get_transaction, client_name}, _from, state) do
+    {:reply, Map.get(state.transactions, client_name), state}
+  end
+
+  @impl true
+  def handle_call({:put_transaction, client_name, transaction}, _from, state) do
+    new_transactions = Map.put(state.transactions, client_name, transaction)
+    {:reply, :ok, %{state | transactions: new_transactions}}
+  end
+
+  @impl true
+  def handle_call({:cleanup_transaction, client_name}, _from, state) do
+    new_state = %{
+      transactions: Map.delete(state.transactions, client_name),
+      begin_timestamps: Map.delete(state.begin_timestamps, client_name)
+    }
+    {:reply, :ok, new_state}
   end
 end
