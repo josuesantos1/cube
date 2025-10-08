@@ -62,9 +62,15 @@ defmodule Parser.Parser do
     end
   end
 
+  defp parse_command("") do
+    {:error, "No command - empty input"}
+  end
+
   defp parse_command(data) do
     {:error, "No command #{String.split(data) |> List.first()}"}
   end
+
+
 
   defp parse_key_value(input) do
     input = String.trim_leading(input)
