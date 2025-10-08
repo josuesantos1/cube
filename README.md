@@ -7,16 +7,34 @@ A high-performance, sharded key-value database with ACID transactions built in E
 - **Sharded Storage:** 20 parallel shards for concurrent access
 - **ACID Transactions:** Full support for BEGIN, COMMIT, ROLLBACK
 - **MVCC (Multi-Version Concurrency Control)**: Snapshot isolation
+- **In-Memory Cache:** Fast read performance with write-through cache
 - **Bloom Filters:** Read performance optimization
 - **WAL (Write-Ahead Logging):** Data durability
 - **HTTP API:** RESTful interface via Bandit/Plug
 - **First-committer-wins:** Conflict detection
 - **LTTLV Format:** Storage format (Length-Type-Tag-Length-Value)
+- **Docker Support:** Containerized deployment with persistent storage
 
 
 ## Quick Start
 
-### Installation
+### Docker (Recommended)
+
+```bash
+# Start with Docker Compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f cube
+
+# Stop
+docker-compose down
+
+# Stop and remove data
+docker-compose down -v
+```
+
+### Local Installation
 
 ```bash
 # Install dependencies
@@ -124,7 +142,7 @@ COMMIT # OK
 
 ### Sharding
 
-- 20 shards using consistent hashing (`erlang.phash2/2`)
+- 20 shards using consistent hashing 
 - Keys distributed via hexadecimal encoding
 - Parallel reads/writes across shards
 
@@ -138,9 +156,43 @@ LTTLV (Length-Type-Tag-Length-Value):
 ### Durability
 
 - WAL logs all writes before applying
-- fsync on every write
 - WAL replay on startup
 - Cleared after successful persistence
+
+### Performance Optimizations
+
+- **In-Memory Cache:** GenServer-based caching layer for frequently accessed keys
+- **Streaming I/O:** Uses `File.stream!` for lazy evaluation, avoiding full file loads
+- **Write Optimization:** Append-only for new keys, in-place updates for existing keys
+- **Cache Invalidation:** Write-through cache ensures consistency
+
+## Docker Deployment
+
+### Environment Variables
+
+- `PORT` - HTTP server port (default: 4000)
+- `DATA_DIR` - Directory for persistent storage (default: current directory)
+- `MIX_ENV` - Elixir environment (production/development)
+
+### Volume Mounts
+
+The Docker setup uses a named volume `cube_data` mounted at `/app/data` to persist:
+- Shard data files (`shard_XX_data.txt`)
+- WAL files (`wal_shard_XX.log`)
+
+### Building from Source
+
+```bash
+# Build image
+docker build -t cube:latest .
+
+# Run with custom data directory
+docker run -d \
+  -p 4000:4000 \
+  -v $(pwd)/data:/app/data \
+  -e DATA_DIR=/app/data \
+  cube:latest
+```
 
 ## Testing
 
