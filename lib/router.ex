@@ -20,6 +20,10 @@ defmodule Cube.Router do
     {:ok, body, conn} = Plug.Conn.read_body(conn)
     client_name = get_req_header(conn, "x-client-name") |> List.first()
 
+    if client_name == "" do
+      send_resp(conn, 400, "ERR \"X-Client-Name header required\"")
+    end
+
     unless client_name do
       send_resp(conn, 400, "ERR \"X-Client-Name header required\"")
     else
