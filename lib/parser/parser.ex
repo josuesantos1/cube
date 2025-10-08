@@ -6,7 +6,14 @@ defmodule Parser.Parser do
   end
 
   defp parse_command("SET " <> rest) do
+    if length(String.split(rest)) == 1 do
+      IO.inspect(length(String.split(rest)), label: "rest")
+      {:error, "SET &lt;key&gt; &lt;value&gt; - Syntax error"}
+    else
+
+
     case parse_key_value(rest) do
+
       {:ok, key, value} ->
         if value.type == nil do
           {:error, "Cannot SET key to NIL"}
@@ -17,6 +24,7 @@ defmodule Parser.Parser do
       {:error, reason} ->
         {:error, reason}
     end
+  end
   end
 
   defp parse_command("GET " <> rest) do
@@ -82,6 +90,8 @@ defmodule Parser.Parser do
     input = String.trim_leading(input)
 
     cond do
+      String.starts_with?(input, "NIL") -> {:error, "NIL is not valid as key"}
+
       String.starts_with?(input, "\"") ->
         case parse_string(String.slice(input, 1..-1//1), "") do
           {:ok, %Parser.Value{value: key_value}, rest} ->
@@ -91,12 +101,8 @@ defmodule Parser.Parser do
             {:error, reason}
         end
 
-        # aducuibar : ERR "Value NIL is not valid as key" quando for NIL
-
       true ->
         case Regex.run(~r/^([A-Za-z_][A-Za-z0-9_]*)(.*)$/, input) do
-          "NIL" <> _rest -> # fix quando for nil
-            {:error, "NIL is not valid as key"}
           [_, key, rest] -> {:ok, key, String.trim_leading(rest)}
           nil -> {:error, "Value #{String.split(input) |> List.first()} is not valid as key"}
         end
@@ -129,7 +135,6 @@ defmodule Parser.Parser do
       [_, number, rest] ->
         {:ok, %Parser.Value{type: :integer, value: String.to_integer(number)}, rest}
 
-      # adicionar erro: SET <chave> <valor> - Syntax error
       nil ->
         {:error, "invalid value - expected integer, string, boolean or NIL"}
     end

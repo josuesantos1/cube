@@ -101,8 +101,8 @@ defmodule ParserTest do
                Parser.Parser.parse("SET chave invalid_value")
     end
 
-    test "returns error for unknown command" do
-      assert {:error, "unknown command"} =
+    test "returns error for No command INVALID" do
+      assert {:error, "No command INVALID"} =
                Parser.Parser.parse("INVALID chave")
     end
   end
