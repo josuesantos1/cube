@@ -9,6 +9,7 @@ defmodule Cube.Application do
 
     children = [
       {Registry, keys: :unique, name: Cube.ShardRegistry},
+      Persistence,
       Cube.ShardSupervisor,
       Cube.ClientStorage,
       {Bandit, plug: Cube.Router, scheme: :http, port: port}
