@@ -24,21 +24,20 @@ defmodule ParserTest do
                Parser.Parser.parse("SET temperatura -10")
     end
 
-    test "parses SET command with boolean true" do
+    test "parses SET command with boolean TRUE" do
       assert {:ok,
               %{command: :set, key: "ativo", value: %Parser.Value{type: :boolean, value: true}}} =
-               Parser.Parser.parse("SET ativo true")
+               Parser.Parser.parse("SET ativo TRUE")
     end
 
-    test "parses SET command with boolean false" do
+    test "parses SET command with boolean FALSE" do
       assert {:ok,
               %{command: :set, key: "inativo", value: %Parser.Value{type: :boolean, value: false}}} =
-               Parser.Parser.parse("SET inativo false")
+               Parser.Parser.parse("SET inativo FALSE")
     end
 
-    test "parses SET command with nil value" do
-      assert {:ok, %{command: :set, key: "vazio", value: %Parser.Value{type: nil, value: nil}}} =
-               Parser.Parser.parse("SET vazio nil")
+    test "rejects SET command with nil value" do
+      assert {:error, "Cannot SET key to NIL"} = Parser.Parser.parse("SET vazio NIL")
     end
 
     test "parses SET command with escaped quotes in string" do
@@ -88,7 +87,7 @@ defmodule ParserTest do
     end
 
     test "returns error for invalid key" do
-      assert {:error, "invalid key - must be simple string (e.g. ABC, my_key)"} =
+      assert {:error, "Value 123invalid is not valid as key"} =
                Parser.Parser.parse("SET 123invalid \"valor\"")
     end
 
@@ -98,7 +97,7 @@ defmodule ParserTest do
     end
 
     test "returns error for invalid value" do
-      assert {:error, "invalid value - expected integer, string, boolean or nil"} =
+      assert {:error, "invalid value - expected integer, string, boolean or NIL"} =
                Parser.Parser.parse("SET chave invalid_value")
     end
 
@@ -130,8 +129,38 @@ defmodule ParserTest do
     end
 
     test "returns error for GET with invalid key" do
-      assert {:error, "invalid key - must be simple string (e.g. ABC, my_key)"} =
+      assert {:error, "Value 123invalid is not valid as key"} =
                Parser.Parser.parse("GET 123invalid")
+    end
+
+    test "parses GET command with quoted key containing spaces" do
+      assert {:ok, %{command: :get, key: "my key with spaces"}} =
+               Parser.Parser.parse("GET \"my key with spaces\"")
+    end
+
+    test "parses SET command with quoted key containing spaces" do
+      assert {:ok,
+              %{
+                command: :set,
+                key: "my key",
+                value: %Parser.Value{type: :string, value: "value"}
+              }} =
+               Parser.Parser.parse("SET \"my key\" \"value\"")
+    end
+
+    test "parses GET command with quoted key containing special chars" do
+      assert {:ok, %{command: :get, key: "key-with-dashes"}} =
+               Parser.Parser.parse("GET \"key-with-dashes\"")
+    end
+
+    test "parses SET command with quoted key and integer value" do
+      assert {:ok,
+              %{
+                command: :set,
+                key: "user count",
+                value: %Parser.Value{type: :integer, value: 42}
+              }} =
+               Parser.Parser.parse("SET \"user count\" 42")
     end
 
     test "returns error for GET without key" do

@@ -134,10 +134,10 @@ defmodule Cube.ClientStorage do
                   value_str == "NIL" ->
                     %Parser.Value{type: nil, value: nil}
 
-                  value_str == "true" ->
+                  value_str == "TRUE" ->
                     %Parser.Value{type: :boolean, value: true}
 
-                  value_str == "false" ->
+                  value_str == "FALSE" ->
                     %Parser.Value{type: :boolean, value: false}
 
                   String.match?(value_str, ~r/^\d+$/) ->

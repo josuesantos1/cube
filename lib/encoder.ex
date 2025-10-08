@@ -15,19 +15,16 @@ defmodule Encoder do
     {key_hexadecimal, key_length}
   end
 
-  def encode_set(key, %Parser.Value{type: type, value: value}) do
+  def encode_set(key, %Parser.Value{type: type, value: value} = parser_value) do
     {key_hexadecimal, key_length} = encode_key(key)
 
-    if value
-    |> to_string()
-    |> byte_size() > 65535 do
+    value_str = Storage.Engine.encode_value(parser_value)
+
+    if byte_size(value_str) > 65535 do
       raise ArgumentError, "Value length exceeds maximum of 65535 bytes"
     end
 
-    value =
-      value
-      |> to_string()
-      |> Base.encode16()
+    value = Base.encode16(value_str)
 
     length_value =
       value
@@ -72,7 +69,7 @@ defmodule Encoder do
 
     case Base.decode16(value_hex, case: :mixed) do
       {:ok, decoded} -> decoded
-      :error -> value_hex
+      :error -> raise ArgumentError, "Invalid hexadecimal encoding in data: #{value_hex}"
     end
   end
 

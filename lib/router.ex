@@ -12,7 +12,7 @@ defmodule Cube.Router do
     case result do
       :ok -> send_resp(conn, 200, "OK")
       {:ok, value} -> send_resp(conn, 200, value)
-      {:error, reason} -> send_resp(conn, 400, "ERR #{reason}")
+      {:error, reason} -> send_resp(conn, 400, "ERR \"#{reason}\"")
     end
   end
 
@@ -21,7 +21,7 @@ defmodule Cube.Router do
     client_name = get_req_header(conn, "x-client-name") |> List.first()
 
     unless client_name do
-      send_resp(conn, 400, "ERR X-Client-Name header required")
+      send_resp(conn, 400, "ERR \"X-Client-Name header required\"")
     else
       case Parser.Parser.parse(body) do
         {:ok, %{command: :get, key: key}} ->
@@ -41,7 +41,7 @@ defmodule Cube.Router do
           handle_result(conn, Cube.ClientStorage.rollback(client_name))
 
         {:error, reason} ->
-          send_resp(conn, 400, "ERR #{reason}")
+          send_resp(conn, 400, "ERR \"#{reason}\"")
       end
     end
   end

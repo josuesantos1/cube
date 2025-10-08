@@ -7,8 +7,15 @@ defmodule Parser.Parser do
 
   defp parse_command("SET " <> rest) do
     case parse_key_value(rest) do
-      {:ok, key, value} -> {:ok, %{command: :set, key: key, value: value}}
-      {:error, reason} -> {:error, reason}
+      {:ok, key, value} ->
+        if value.type == nil do
+          {:error, "Cannot SET key to NIL"}
+        else
+          {:ok, %{command: :set, key: key, value: value}}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -47,8 +54,8 @@ defmodule Parser.Parser do
     end
   end
 
-  defp parse_command(_) do
-    {:error, "unknown command"}
+  defp parse_command(data) do
+    {:error, "No command #{String.split(data) |> List.first()}"}
   end
 
   defp parse_key_value(input) do
@@ -72,9 +79,27 @@ defmodule Parser.Parser do
   end
 
   defp parse_key(input) do
-    case Regex.run(~r/^([A-Za-z_][A-Za-z0-9_]*)(.*)$/, input) do
-      [_, key, rest] -> {:ok, key, String.trim_leading(rest)}
-      nil -> {:error, "invalid key - must be simple string (e.g. ABC, my_key)"}
+    input = String.trim_leading(input)
+
+    cond do
+      String.starts_with?(input, "\"") ->
+        case parse_string(String.slice(input, 1..-1//1), "") do
+          {:ok, %Parser.Value{value: key_value}, rest} ->
+            {:ok, key_value, rest}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+        # aducuibar : ERR "Value NIL is not valid as key" quando for NIL
+
+      true ->
+        case Regex.run(~r/^([A-Za-z_][A-Za-z0-9_]*)(.*)$/, input) do
+          "NIL" <> _rest -> # fix quando for nil
+            {:error, "NIL is not valid as key"}
+          [_, key, rest] -> {:ok, key, String.trim_leading(rest)}
+          nil -> {:error, "Value #{String.split(input) |> List.first()} is not valid as key"}
+        end
     end
   end
 
@@ -85,13 +110,13 @@ defmodule Parser.Parser do
       String.starts_with?(input, "\"") ->
         parse_string(String.slice(input, 1..-1//1), "")
 
-      String.starts_with?(input, "true") ->
+      String.starts_with?(input, "TRUE") ->
         {:ok, %Parser.Value{type: :boolean, value: true}, String.slice(input, 4..-1//1)}
 
-      String.starts_with?(input, "false") ->
+      String.starts_with?(input, "FALSE") ->
         {:ok, %Parser.Value{type: :boolean, value: false}, String.slice(input, 5..-1//1)}
 
-      String.starts_with?(input, "nil") ->
+      String.starts_with?(input, "NIL") ->
         {:ok, %Parser.Value{type: nil, value: nil}, String.slice(input, 3..-1//1)}
 
       true ->
@@ -104,8 +129,9 @@ defmodule Parser.Parser do
       [_, number, rest] ->
         {:ok, %Parser.Value{type: :integer, value: String.to_integer(number)}, rest}
 
+      # adicionar erro: SET <chave> <valor> - Syntax error
       nil ->
-        {:error, "invalid value - expected integer, string, boolean or nil"}
+        {:error, "invalid value - expected integer, string, boolean or NIL"}
     end
   end
 

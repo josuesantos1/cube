@@ -83,7 +83,7 @@ defmodule FilterTest do
   end
 
   describe "bloom filter properties" do
-    test "no false negatives - if element was added, contains? must return true" do
+    test "no false negatives - if element was added, contains? must return TRUE" do
       filter = Filter.new()
       elements = Enum.map(1..100, &"element#{&1}")
 

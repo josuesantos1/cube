@@ -26,7 +26,7 @@ defmodule EncoderTest do
       value = %Parser.Value{type: :boolean, value: true}
       {command, _shard} = Encoder.encode_set("active", value)
 
-      assert String.contains?(command, Base.encode16("true"))
+      assert String.contains?(command, Base.encode16("TRUE"))
       assert String.contains?(command, "3")
     end
 
@@ -143,7 +143,7 @@ defmodule EncoderTest do
 
       decoded = Encoder.decode(String.trim(command))
 
-      assert decoded == "false"
+      assert decoded == "FALSE"
     end
 
     test "decodes Unicode characters" do
@@ -355,8 +355,8 @@ defmodule EncoderTest do
       test_cases = [
         {%Parser.Value{type: :string, value: "test string"}, "test string"},
         {%Parser.Value{type: :integer, value: 42}, "42"},
-        {%Parser.Value{type: :boolean, value: true}, "true"},
-        {%Parser.Value{type: :boolean, value: false}, "false"}
+        {%Parser.Value{type: :boolean, value: true}, "TRUE"},
+        {%Parser.Value{type: :boolean, value: false}, "FALSE"}
       ]
 
       Enum.each(test_cases, fn {val, expected} ->
@@ -459,7 +459,10 @@ defmodule EncoderTest do
     end
 
     test "decode handles malformed hex gracefully" do
-      malformed = "00661626300000000ZINVALID"
+      # Tag length: 006 (6 chars), tag: 616263 (abc), type: 0,
+      # value_length: 0008 (8 bytes = 16 hex chars),
+      # value_hex: ZZZZZZZZZZZZZZZZ (16 chars of invalid hex)
+      malformed = "00661626300008ZZZZZZZZZZZZZZZZ"
 
       assert_raise ArgumentError, fn ->
         Encoder.decode(malformed)

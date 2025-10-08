@@ -122,8 +122,8 @@ defmodule Storage.EngineTest do
       test_cases = [
         {%Parser.Value{type: :string, value: "string"}, "string"},
         {%Parser.Value{type: :integer, value: 42}, "42"},
-        {%Parser.Value{type: :boolean, value: true}, "true"},
-        {%Parser.Value{type: :boolean, value: false}, "false"},
+        {%Parser.Value{type: :boolean, value: true}, "TRUE"},
+        {%Parser.Value{type: :boolean, value: false}, "FALSE"},
         {%Parser.Value{type: nil, value: nil}, "NIL"}
       ]
 
@@ -194,14 +194,14 @@ defmodule Storage.EngineTest do
       assert Storage.Engine.encode_value(value) == "0"
     end
 
-    test "encodes boolean true" do
+    test "encodes boolean TRUE" do
       value = %Parser.Value{type: :boolean, value: true}
-      assert Storage.Engine.encode_value(value) == "true"
+      assert Storage.Engine.encode_value(value) == "TRUE"
     end
 
-    test "encodes boolean false" do
+    test "encodes boolean FALSE" do
       value = %Parser.Value{type: :boolean, value: false}
-      assert Storage.Engine.encode_value(value) == "false"
+      assert Storage.Engine.encode_value(value) == "FALSE"
     end
 
     test "encodes nil value" do
@@ -313,7 +313,7 @@ defmodule Storage.EngineTest do
 
       assert {:ok, "Alice"} = Storage.Engine.get(shard_id, "name", f3)
       assert {:ok, "30"} = Storage.Engine.get(shard_id, "age", f3)
-      assert {:ok, "true"} = Storage.Engine.get(shard_id, "active", f3)
+      assert {:ok, "TRUE"} = Storage.Engine.get(shard_id, "active", f3)
     end
 
     test "persistence survives filter reload" do

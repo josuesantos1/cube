@@ -78,13 +78,13 @@ defmodule Storage.Engine do
       "42"
 
       iex> Storage.Engine.encode_value(%Parser.Value{type: :boolean, value: true})
-      "true"
+      "TRUE"
   """
   def encode_value(%Parser.Value{type: type, value: value}) do
     case type do
       :string -> value
       :integer -> Integer.to_string(value)
-      :boolean -> Atom.to_string(value)
+      :boolean -> if value, do: "TRUE", else: "FALSE"
       nil -> "NIL"
     end
   end

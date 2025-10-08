@@ -42,7 +42,7 @@ defmodule Cube.RouterTest do
       conn = Cube.Router.call(conn, @opts)
 
       assert conn.status == 400
-      assert conn.resp_body == "ERR X-Client-Name header required"
+      assert conn.resp_body == "ERR \"X-Client-Name header required\""
     end
   end
 
@@ -143,24 +143,24 @@ defmodule Cube.RouterTest do
       key = "active_#{:rand.uniform(100_000)}"
 
       conn =
-        conn(:post, "/", "SET #{key} true")
+        conn(:post, "/", "SET #{key} TRUE")
         |> put_req_header("x-client-name", client_name)
         |> Cube.Router.call(@opts)
 
       assert conn.status == 200
-      assert conn.resp_body == "NIL true"
+      assert conn.resp_body == "NIL TRUE"
     end
 
-    test "handles nil values" do
+    test "rejects nil values" do
       client_name = "router_set_nil_#{:rand.uniform(100_000)}"
 
       conn =
-        conn(:post, "/", "SET empty nil")
+        conn(:post, "/", "SET empty NIL")
         |> put_req_header("x-client-name", client_name)
         |> Cube.Router.call(@opts)
 
-      assert conn.status == 200
-      assert conn.resp_body == "NIL NIL"
+      assert conn.status == 400
+      assert conn.resp_body == "ERR \"Cannot SET key to NIL\""
     end
 
     test "handles quoted strings with spaces" do
@@ -216,7 +216,7 @@ defmodule Cube.RouterTest do
         |> Cube.Router.call(@opts)
 
       assert conn.status == 400
-      assert conn.resp_body == "ERR Already in transaction"
+      assert conn.resp_body == "ERR \"Already in transaction\""
     end
   end
 
@@ -252,7 +252,7 @@ defmodule Cube.RouterTest do
         |> Cube.Router.call(@opts)
 
       assert conn.status == 400
-      assert conn.resp_body == "ERR No transaction in progress"
+      assert conn.resp_body == "ERR \"No transaction in progress\""
     end
 
     test "persists writes after commit" do
@@ -310,7 +310,7 @@ defmodule Cube.RouterTest do
         |> Cube.Router.call(@opts)
 
       assert conn.status == 400
-      assert conn.resp_body == "ERR No transaction in progress"
+      assert conn.resp_body == "ERR \"No transaction in progress\""
     end
 
     test "discards writes after rollback" do
@@ -392,6 +392,31 @@ defmodule Cube.RouterTest do
         |> Cube.Router.call(@opts)
 
       assert conn.status == 400
+    end
+
+    test "error messages are quoted (GET with integer)" do
+      client_name = "router_int_key_#{:rand.uniform(100_000)}"
+
+      conn =
+        conn(:post, "/", "GET 10")
+        |> put_req_header("x-client-name", client_name)
+        |> Cube.Router.call(@opts)
+
+      assert conn.status == 400
+      assert String.starts_with?(conn.resp_body, "ERR \"")
+      assert String.ends_with?(conn.resp_body, "\"")
+    end
+
+    test "error messages are quoted (SET with NIL)" do
+      client_name = "router_nil_val_#{:rand.uniform(100_000)}"
+
+      conn =
+        conn(:post, "/", "SET key NIL")
+        |> put_req_header("x-client-name", client_name)
+        |> Cube.Router.call(@opts)
+
+      assert conn.status == 400
+      assert conn.resp_body == "ERR \"Cannot SET key to NIL\""
     end
   end
 

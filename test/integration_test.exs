@@ -20,7 +20,7 @@ defmodule Cube.IntegrationTest do
         |> Cube.Router.call(@opts)
 
       assert conn.status == 400
-      assert conn.resp_body == "ERR X-Client-Name header required"
+      assert conn.resp_body == "ERR \"X-Client-Name header required\""
     end
 
     test "accepts request with X-Client-Name header" do
@@ -106,7 +106,7 @@ defmodule Cube.IntegrationTest do
     test "sets boolean value" do
       client_name = "BoolClient"
 
-      conn(:post, "/", "SET active true")
+      conn(:post, "/", "SET active TRUE")
       |> put_req_header("x-client-name", client_name)
       |> Cube.Router.call(@opts)
 
@@ -115,7 +115,7 @@ defmodule Cube.IntegrationTest do
         |> put_req_header("x-client-name", client_name)
         |> Cube.Router.call(@opts)
 
-      assert conn.resp_body == "true"
+      assert conn.resp_body == "TRUE"
     end
   end
 
