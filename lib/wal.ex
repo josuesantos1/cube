@@ -74,6 +74,7 @@ defmodule WAL do
   end
 
   defp build_wal_path(shard_identifier) do
-    "wal_#{shard_identifier}.log"
+    data_dir = System.get_env("DATA_DIR", ".")
+    Path.join(data_dir, "wal_#{shard_identifier}.log")
   end
 end
